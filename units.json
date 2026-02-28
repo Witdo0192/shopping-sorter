@@ -1,0 +1,146 @@
+{
+    "weight": {
+        "label": "⚖️ По весу",
+        "base": "г",
+        "units": {
+            "кг": {
+                "multiplier": 1000,
+                "decimals": 2
+            },
+            "г": {
+                "multiplier": 1,
+                "decimals": 2
+            },
+            "гр": {
+                "multiplier": 1,
+                "decimals": 2
+            },
+            "грамм": {
+                "multiplier": 1,
+                "decimals": 2
+            },
+            "g": {
+                "multiplier": 1,
+                "decimals": 2
+            }
+        },
+        "priority": 0
+    },
+    "volume": {
+        "label": "💧 По объёму",
+        "base": "мл",
+        "units": {
+            "л": {
+                "multiplier": 1000,
+                "decimals": 2
+            },
+            "мл": {
+                "multiplier": 1,
+                "decimals": 2
+            },
+            "литр": {
+                "multiplier": 1000,
+                "decimals": 2
+            },
+            "литра": {
+                "multiplier": 1000,
+                "decimals": 2
+            },
+            "литров": {
+                "multiplier": 1000,
+                "decimals": 2
+            }
+        },
+        "priority": 1
+    },
+    "pieces": {
+        "label": "🔢 Штучные",
+        "base": "шт",
+        "units": {
+            "шт": {
+                "multiplier": 1,
+                "decimals": 0
+            },
+            "штук": {
+                "multiplier": 1,
+                "decimals": 0
+            },
+            "штуки": {
+                "multiplier": 1,
+                "decimals": 0
+            },
+            "таблеток": {
+                "multiplier": 1,
+                "decimals": 0
+            },
+            "таблетки": {
+                "multiplier": 1,
+                "decimals": 0
+            },
+            "табл": {
+                "multiplier": 1,
+                "decimals": 0
+            },
+            "капсул": {
+                "multiplier": 1,
+                "decimals": 0
+            },
+            "капсулы": {
+                "multiplier": 1,
+                "decimals": 0
+            },
+            "саше": {
+                "multiplier": 1,
+                "decimals": 0
+            },
+            "пакетик": {
+                "multiplier": 1,
+                "decimals": 0
+            },
+            "пакетиков": {
+                "multiplier": 1,
+                "decimals": 0
+            },
+            "порций": {
+                "multiplier": 1,
+                "decimals": 0
+            },
+            "порции": {
+                "multiplier": 1,
+                "decimals": 0
+            },
+            "упаковок": {
+                "multiplier": 1,
+                "decimals": 0
+            },
+            "упаковки": {
+                "multiplier": 1,
+                "decimals": 0
+            },
+            "уп": {
+                "multiplier": 1,
+                "decimals": 0
+            }
+        },
+        "priority": 2
+    },
+    "length": {
+        "label": "📏 По длине",
+        "base": "мм",
+        "units": {
+            "м": {
+                "multiplier": 1000,
+                "decimals": 2
+            },
+            "см": {
+                "multiplier": 10,
+                "decimals": 2
+            },
+            "мм": {
+                "multiplier": 1,
+                "decimals": 2
+            }
+        },
+        "priority": 3
+    }
+}

@@ -1,0 +1,119 @@
+{
+    "lamoda": {
+        "domains": [
+            "lamoda.ru"
+        ],
+        "link": "div.x-product-card__link > a[role=\"link\"]",
+        "price": [
+            "span.x-product-card-description__price-new",
+            "span.x-product-card-description__price-single.x-product-card-description__price-WEB8507_price_bold"
+        ],
+        "tile": "div._gridItem_1l7ym_11",
+        "title": "div.x-product-card-description__microdata-wrap > div.x-product-card-description__product-name",
+        "reviews": "",
+        "rating": "",
+        "delivery": "",
+        "weight": ""
+    },
+    "megamarket": {
+        "domains": [
+            "megamarket.ru"
+        ],
+        "link": "div > a.catalog-item-regular-desktop__title-link",
+        "price": "div[data-test=\"product-price\"]",
+        "tile": "div[data-test=\"product-item\"]",
+        "title": "div > a.catalog-item-regular-desktop__title-link",
+        "reviews": "",
+        "rating": "",
+        "delivery": "",
+        "weight": ""
+    },
+    "ozon": {
+        "domains": [
+            "ozon.ru",
+            "ozon.de",
+            "ozon.by"
+        ],
+        "link": "a[href]",
+        "price": [
+            "span.c35_3_12-a1",
+            "div > span.c35_3_13-a1.tsHeadline500Medium.c35_3_13-b1.c35_3_13-a6"
+        ],
+        "tile": "div.tile-root",
+        "title": "span.tsBody500Medium",
+        "reviews": "",
+        "rating": "",
+        "delivery": "",
+        "weight": ""
+    },
+    "ozon_kz": {
+        "domains": [
+            "ozon.kz"
+        ],
+        "link": "a[href]",
+        "price": [
+            "div > span.c35_3_12-a1.tsHeadline400Small",
+            " span.tsHeadline500Medium"
+        ],
+        "tile": "div.tile-root",
+        "title": "span.tsBody500Medium",
+        "reviews": "",
+        "rating": "",
+        "delivery": "",
+        "weight": ""
+    },
+    "vseinstrumenti": {
+        "domains": [
+            "vseinstrumenti.ru"
+        ],
+        "link": "div.T3uC-8 > a.Glm7SF",
+        "price": "p[data-qa=\"product-price-current\"]",
+        "tile": "div._item_2k2ln_8",
+        "title": "div.T3uC-8 > a > span._text_5vy1f_54",
+        "reviews": "",
+        "rating": "",
+        "delivery": "",
+        "weight": ""
+    },
+    "wildberries": {
+        "domains": [
+            "wildberries.ru",
+            "wildberries.by",
+            "wildberries.kz"
+        ],
+        "link": "a.product-card__link",
+        "price": "ins.price__lower-price",
+        "tile": "article.product-card",
+        "title": "span.product-card__name",
+        "reviews": "",
+        "rating": "",
+        "delivery": "",
+        "weight": ""
+    },
+    "yarcheplus": {
+        "domains": [
+            "yarcheplus.ru"
+        ],
+        "link": "a.lkn2Ylc1S",
+        "price": "div.awDg02i5o > div.cwDg02i5o",
+        "tile": "div.product-card-template_size_big",
+        "title": "div.ckn2Ylc1S > div.doFy5xub4",
+        "reviews": "",
+        "rating": "",
+        "delivery": "",
+        "weight": ""
+    },
+    "ninjapizza": {
+        "domains": [
+            "ninjapizza.ru"
+        ],
+        "tile": "article.product-card",
+        "price": "span.product-price-block",
+        "title": "h2.product-name",
+        "link": "link[itemprop=\"url\"]",
+        "reviews": "",
+        "rating": ".product-score span:last-child",
+        "delivery": "",
+        "weight": "span.product-weight"
+    }
+}
