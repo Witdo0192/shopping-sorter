@@ -275,6 +275,29 @@ function getCategoriesByPriority() {
     return Object.keys(UNITS || {}).sort(compareCategoriesByPriority);
 }
 
+// Нормализует введённый пользователем домен для сравнения: убирает протокол,
+// www., путь/query после первого "/", приводит к нижнему регистру.
+function normalizeDomainForMatch(raw) {
+    let d = String(raw || '').trim().toLowerCase();
+    d = d.replace(/^[a-z]+:\/\//, '');   // http:// https://
+    d = d.replace(/^www\./, '');
+    d = d.split('/')[0];                 // отрезаем путь, если случайно вставили ссылку целиком
+    d = d.split('?')[0].split('#')[0];
+    return d;
+}
+
+// Домен из настроек считается совпавшим, если это ТОЧНО тот же хост или его
+// поддомен (a.ggsel.net матчит ggsel.net) — но НЕ произвольная подстрока.
+// Раньше использовался hostname.includes(d), из-за чего один сайт в базе мог
+// случайно "перехватить" другой, если его домен оказывался подстрокой (или
+// наоборот) — сайт находился, но не тот, что реально открыт.
+function hostnameMatchesDomain(hostname, rawDomain) {
+    const h = normalizeDomainForMatch(hostname);
+    const d = normalizeDomainForMatch(rawDomain);
+    if (!h || !d) return false;
+    return h === d || h.endsWith('.' + d);
+}
+
 async function loadSelectors() {
     try {
         const [defaultSites, defaultUnits] = await Promise.all([
@@ -305,7 +328,7 @@ async function loadSelectors() {
         }
 
         for (const [name, config] of Object.entries(sites)) {
-            if (config.domains?.some(d => hostname.includes(d))) {
+            if (config.domains?.some(d => hostnameMatchesDomain(hostname, d))) {
                 const working = tryConfig(config);
                 if (working) {
                     SELECTOR_PROFILES = working;
@@ -2276,7 +2299,8 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
             },
             reload: loadSelectors,
             currentConfig: SELECTORS?._originalConfig || SELECTORS || null,
-            siteName: SELECTORS?._siteName || null
+            siteName: SELECTORS?._siteName || null,
+            knownInDatabase: !!SELECTORS?._knownInDatabase
         });
         sendResponse({ success: true });
     }
@@ -3554,6 +3578,102 @@ function openSelectorPickerPanel(hooks) {
         document.addEventListener('mousemove',mm); document.addEventListener('mouseup',mu);
         panel._cleanupDrag=()=>{document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);};
     })();
+
+    // ─── Явный статус определения сайта ────────────────────────────────────────
+    // Раньше было видно только название сайта в шапке — если срабатывала не та
+    // запись (например, по случайному совпадению эвристики DOM, а не по домену),
+    // это было не отличить от «всё верно». Показываем прямо, что определилось,
+    // и даём поле домена + кнопку добавления, если текущий домен не настроен.
+    const domainStatusBox = document.createElement('div');
+    domainStatusBox.style.cssText = 'padding:8px 14px;background:#fff8e1;border-bottom:1px solid #eee;flex-shrink:0;font-size:11px;';
+    domainStatusBox.innerHTML = `
+        <div id="ss-picker-domain-status" style="margin-bottom:6px;line-height:1.4;"></div>
+        <div style="display:flex;gap:6px;align-items:center;">
+            <input id="ss-picker-domain-input" style="flex:1;min-width:0;padding:5px 7px;border:1px solid #ddd;border-radius:6px;font-size:11px;font-family:monospace;">
+            <button id="ss-picker-domain-addbtn" type="button" style="flex:0 0 auto;padding:5px 9px;border:1px solid #2e7d32;border-radius:6px;background:#2e7d32;color:#fff;cursor:pointer;font-size:11px;white-space:nowrap;">➕ Добавить как новый сайт</button>
+        </div>`;
+    panelRoot.appendChild(domainStatusBox);
+    const domainStatusEl = domainStatusBox.querySelector('#ss-picker-domain-status');
+    const domainInputEl = domainStatusBox.querySelector('#ss-picker-domain-input');
+    const domainAddBtn = domainStatusBox.querySelector('#ss-picker-domain-addbtn');
+    domainInputEl.value = hostname;
+
+    let __allSitesCache = null; // {key: config} — подгружается один раз при открытии панели
+    async function getAllSitesForStatusCheck() {
+        if (__allSitesCache) return __allSitesCache;
+        try {
+            const defaultSites = await fetch(chrome.runtime.getURL('sites.json')).then(r => r.json());
+            const stored = await new Promise(resolve => chrome.storage.local.get(['sites'], resolve));
+            __allSitesCache = stored.sites ?? defaultSites;
+        } catch { __allSitesCache = {}; }
+        return __allSitesCache;
+    }
+    function findSiteKeyForDomain(allSites, domain) {
+        for (const [key, cfg] of Object.entries(allSites || {})) {
+            if (cfg.domains?.some(d => hostnameMatchesDomain(domain, d))) return key;
+        }
+        return null;
+    }
+    async function refreshDomainStatus() {
+        const typed = domainInputEl.value.trim();
+        if (!typed) {
+            domainStatusEl.innerHTML = '<span style="color:#999">Введите домен</span>';
+            domainAddBtn.style.display = 'none';
+            return;
+        }
+        const allSites = await getAllSitesForStatusCheck();
+        const matchedKey = findSiteKeyForDomain(allSites, typed);
+        if (matchedKey) {
+            const label = allSites[matchedKey]?.displayName || matchedKey;
+            domainStatusEl.innerHTML = `✅ Определён сайт: <b>${hostname}</b> — уже настроен в базе как «<b>${esc(label)}</b>»`;
+            domainAddBtn.style.display = 'none';
+        } else {
+            const heuristicNote = (hooks.siteName && !hooks.knownInDatabase && hooks.siteName !== hostname)
+                ? ` Селекторы сейчас взяты от «<b>${hooks.siteName}</b>» — совпали случайно (по разметке страницы), это НЕ настройка для этого домена.`
+                : '';
+            domainStatusEl.innerHTML = `⚠️ Домен <b>${esc(typed)}</b> не найден в настройках.${heuristicNote}`;
+            domainAddBtn.style.display = '';
+        }
+    }
+    function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    domainInputEl.addEventListener('input', refreshDomainStatus);
+    refreshDomainStatus();
+
+    domainAddBtn.addEventListener('click', async () => {
+        const domain = normalizeDomainForMatch(domainInputEl.value);
+        if (!domain) { hooks.notify?.('Введите домен', 'warning'); return; }
+        domainAddBtn.disabled = true; domainAddBtn.textContent = '…';
+        try {
+            const allSites = await getAllSitesForStatusCheck();
+            if (findSiteKeyForDomain(allSites, domain)) {
+                hooks.notify?.('Этот домен уже настроен', 'warning');
+                __allSitesCache = null; await refreshDomainStatus();
+                return;
+            }
+            let key = domain.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '') || 'site';
+            let uniqueKey = key, n = 2;
+            while (allSites[uniqueKey]) { uniqueKey = `${key}_${n++}`; }
+            const newSiteConfig = {
+                displayName: domain,
+                domains: [domain],
+                cards: [{ name: 'Карточка 1', tile: '', id: '', price: '', title: '', link: 'a[href]', reviews: '', rating: '', delivery: '', weight: '', extras: [] }],
+                tile: '', id: '', price: '', title: '', link: 'a[href]', reviews: '', rating: '', delivery: '', weight: '',
+            };
+            const updatedSites = { ...allSites, [uniqueKey]: newSiteConfig };
+            await new Promise(resolve => chrome.storage.local.set({ sites: updatedSites }, resolve));
+            __allSitesCache = updatedSites;
+            hooks.notify?.(`Сайт «${domain}» добавлен в настройки`, 'success');
+            await hooks.reload?.();
+            // Перерисовываем панель заново — она подхватит уже привязанный домен.
+            document.getElementById('ss-picker-panel')?.remove();
+            openSelectorPickerPanel(hooks);
+        } catch (e) {
+            console.error(e);
+            hooks.notify?.('Не удалось добавить сайт', 'warning');
+        } finally {
+            domainAddBtn.disabled = false; domainAddBtn.textContent = '➕ Добавить как новый сайт';
+        }
+    });
 
     const tabBar = document.createElement('div');
     tabBar.style.cssText='display:flex;gap:5px;align-items:center;padding:8px 10px;border-bottom:1px solid #eee;background:#fafafa;overflow:auto;flex-shrink:0;';
