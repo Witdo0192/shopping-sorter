@@ -6751,7 +6751,8 @@ attrBtn.style.cssText='font-size:9px;padding:3px 5px;border:1px solid #ddd;borde
     // attributeSuggestCache). Вызывается на каждый ввод символа — это
     // дёшево (перебор кэша из нескольких десятков атрибутов максимум).
     function refreshAttributeAutocompleteUi() {
-        if (document.activeElement !== searchInput) { hideAttrAutocomplete(); return; }
+        const searchRootActive = uiRoot.activeElement || document.activeElement;
+        if (searchRootActive !== searchInput) { hideAttrAutocomplete(); return; }
         const pos = searchInput.selectionStart ?? searchInput.value.length;
         const ctx = getAttrCursorContext(searchInput.value, pos);
         if (ctx.mode === 'name') {
@@ -6828,7 +6829,10 @@ attrBtn.style.cssText='font-size:9px;padding:3px 5px;border:1px solid #ddd;borde
     searchInput.addEventListener('blur', () => {
         // Небольшая задержка, чтобы mousedown по варианту в списке успел
         // сработать раньше, чем скроется сам список.
-        setTimeout(() => { if (document.activeElement !== searchInput) hideAttrAutocomplete(); }, 120);
+        setTimeout(() => {
+            const searchRootActive = uiRoot.activeElement || document.activeElement;
+            if (searchRootActive !== searchInput) hideAttrAutocomplete();
+        }, 120);
     });
     searchInput.addEventListener('keydown', (e) => {
         if ((attrAcMode !== 'name' && attrAcMode !== 'sort') || !attrAcItems.length) {
