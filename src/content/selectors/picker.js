@@ -180,6 +180,7 @@ function pickerTeardownScrollSync() {
 
 // ── режим «кликни по элементу» ──
 let _pickerActive = false;
+function isSelectorPicking() { return _pickerActive; }
 let _pickerHoverBox = null;
 let _pickerOnPick = null;
 let _pickerOnCancel = null;

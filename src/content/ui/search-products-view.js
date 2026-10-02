@@ -536,5 +536,10 @@ function createSearchProductsView(dependencies) {
 
 
     // Делегирование hover/click для карточек. Не создаём по 3 listener'а на каждую карточку.
-    return { renderTiles };
+    return { renderTiles,
+        destroy() {
+            if (virtualRenderCleanup) { virtualRenderCleanup(); virtualRenderCleanup = null; }
+            _renderCloneCache.clear();
+        }
+    };
 }

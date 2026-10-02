@@ -630,5 +630,7 @@ function createSavedProductsView(dependencies) {
         renderSavedTiles();
     });
 
-    return { renderSavedTiles };
+    return { renderSavedTiles,
+        destroy() { dependencies.savedContainer._imgObserver?.disconnect(); }
+    };
 }

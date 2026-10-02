@@ -71,7 +71,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (changes.virtualizationThreshold) {
         const vt = Number(changes.virtualizationThreshold.newValue);
         virtualizationThreshold = Number.isFinite(vt) && vt >= 0 ? Math.min(10000, Math.round(vt)) : 500;
-        try { if (typeof currentTiles !== 'undefined' && productsContainer?.isConnected) applyFilters(); } catch (_) {}
+        window._ssApplyFilters?.();
     }
 });
 

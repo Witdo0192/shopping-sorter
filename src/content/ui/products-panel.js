@@ -1,7 +1,8 @@
-// Большая панель товаров: создание, события, фильтры, списки и закрытие.
-// Общие данные и вычисления находятся в соседних файлах; замыкание UI пока сохранено.
+// Композиция панели: общее состояние, создание частей, связи и жизненный цикл.
+// Части UI получают dependencies через геттеры/сеттеры и владеют своим состоянием.
 
 function createSortedProductsPopup(mode = 'asc') {
+    window._ssClosePopup?.();
     document.getElementById('products-sorted-popup')?.remove();
     document.getElementById('shopper-sorter-style')?.remove();
 
@@ -24,121 +25,9 @@ function createSortedProductsPopup(mode = 'asc') {
     // Компактная статистика по дополнительным атрибутам.
     // Фильтрация дополнительных атрибутов выполняется через основную строку поиска;
     // здесь показываем наличие/отсутствие и распределение найденных значений.
-    const extraControls = document.createElement('div');
-    extraControls.style.cssText='display:flex;flex-direction:column;gap:4px;padding:3px 7px;border:1px dashed #d8dee6;border-radius:7px;background:#fbfcfd;';
-    const extraControlsTitle=document.createElement('div');
-    extraControlsTitle.textContent='🏷️ Доп. атрибуты и величины';
-    extraControlsTitle.style.cssText='font-size:11px;font-weight:700;color:#607D8B;cursor:pointer;user-select:none;min-height:18px;line-height:18px;';
-    extraControls.appendChild(extraControlsTitle);
-    const extraControlsBody=document.createElement('div');
-    extraControlsBody.style.cssText='display:flex;flex-direction:column;gap:4px;';
-    extraControls.appendChild(extraControlsBody);
-    let extraControlsCollapsed=false;
-    chrome.storage.local.get(['extraControlsCollapsed'], d => {
-        setExtraControlsCollapsed(d.extraControlsCollapsed === true);
+    const { extraControls, refreshExtraControls } = createExtraAttributesSummary({
+
     });
-
-    function setExtraControlsCollapsed(collapsed){
-        extraControlsCollapsed=!!collapsed;
-        extraControlsBody.hidden=extraControlsCollapsed;
-        // Не полагаемся только на hidden: у body задан inline display:flex,
-        // который в некоторых стилях страницы может переопределить [hidden].
-        extraControlsBody.style.display=extraControlsCollapsed?'none':'flex';
-        extraControls.style.padding=extraControlsCollapsed?'2px 7px':'3px 7px';
-        extraControls.style.gap=extraControlsCollapsed?'0':'4px';
-        extraControlsTitle.textContent=extraControlsCollapsed
-            ? '🏷️ Доп. атрибуты и величины ▸'
-            : '🏷️ Доп. атрибуты и величины ▾';
-        chrome.storage.local.set({ extraControlsCollapsed });
-    }
-    extraControlsTitle.addEventListener('click',()=>setExtraControlsCollapsed(!extraControlsCollapsed));
-
-    function refreshExtraControls(tiles=[...seenTiles.values()]) {
-        extraControlsBody.innerHTML='';
-        const total=tiles.length;
-        if(!total){
-            const empty=document.createElement('div');
-            empty.textContent='Нет карточек для анализа';
-            empty.style.cssText='font-size:10px;color:#999;padding:2px 0;';
-            extraControlsBody.appendChild(empty);
-            return;
-        }
-
-        const defs=new Map();
-        for(const tile of tiles){
-            const profile=getSelectorProfileForTile(tile);
-            for(const item of (profile?.extras || [])){
-                const name=String(item?.name||'').trim();
-                if(!name) continue;
-                if(!defs.has(name)) defs.set(name,{name,kind:item?.kind==='quantity'?'quantity':'text',unit:String(item?.unit||'').trim()});
-            }
-        }
-
-        if(!defs.size){
-            const empty=document.createElement('div');
-            empty.textContent='Дополнительные атрибуты не настроены';
-            empty.style.cssText='font-size:10px;color:#999;padding:2px 0;';
-            extraControlsBody.appendChild(empty);
-            return;
-        }
-
-        for(const def of defs.values()){
-            let found=0;
-            const frequencies=new Map();
-            for(const tile of tiles){
-                const attrs=getExtraTileAttributes(tile);
-                const raw=String(attrs[def.name]||'').trim();
-                if(!raw) continue;
-                found++;
-                for(const value of raw.split(' | ').map(v=>v.trim()).filter(Boolean)){
-                    frequencies.set(value,(frequencies.get(value)||0)+1);
-                }
-            }
-            const absent=Math.max(0,total-found);
-            const pct=Math.round(found/total*100);
-            const topValues=[...frequencies.entries()]
-                .sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0]))
-                .slice(0,6);
-            const distinct=frequencies.size;
-
-            const row=document.createElement('div');
-            row.style.cssText='display:flex;align-items:center;gap:7px;min-height:20px;font-size:10px;';
-
-            const name=document.createElement('span');
-            name.textContent=def.name+(def.unit?' ('+def.unit+')':'');
-            name.style.cssText='min-width:110px;max-width:180px;font-weight:600;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-            name.title=def.name+(def.unit?' ('+def.unit+')':'');
-
-            const foundEl=document.createElement('span');
-            foundEl.textContent=`✓ ${found}`;
-            foundEl.style.cssText='color:#2e7d32;font-weight:600;white-space:nowrap;';
-            foundEl.title=`Найден у ${found} из ${total} карточек`;
-
-            const absentEl=document.createElement('span');
-            absentEl.textContent=`✕ ${absent}`;
-            absentEl.style.cssText='color:#c62828;font-weight:600;white-space:nowrap;';
-            absentEl.title=`Не найден у ${absent} из ${total} карточек`;
-
-            const percent=document.createElement('span');
-            percent.textContent=`${pct}%`;
-            percent.style.cssText='color:#777;min-width:32px;white-space:nowrap;';
-            percent.title=`Заполненность: ${pct}%`;
-
-            const valuesEl=document.createElement('span');
-            const valueText=topValues.length
-                ? topValues.map(([value,count])=>`${value} ×${count}`).join(' · ') + (distinct>topValues.length?` · +${distinct-topValues.length}`:'')
-                : '—';
-            valuesEl.textContent=valueText;
-            valuesEl.style.cssText='color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:100px;';
-            valuesEl.title=topValues.length
-                ? `Уникальных значений: ${distinct}. Частые значения: ${topValues.map(([value,count])=>`${value} — ${count}`).join('; ')}${distinct>topValues.length?'; и другие':''}`
-                : 'Значений не найдено';
-
-            row.append(name,foundEl,absentEl,percent,valuesEl);
-            extraControlsBody.appendChild(row);
-        }
-    }
-    refreshExtraControls();
 
     const style = createProductsPanelStyle();
 
@@ -354,7 +243,7 @@ function createSortedProductsPopup(mode = 'asc') {
             savedPanel.style.display = 'none';
             folderRow.style.display = 'none';
             refreshSavedKeysCache(); // обновляем значки 🔖
-            refreshSearchImgBtn.style.display = debugMode ? 'inline-block' : 'none';
+            refreshSearchImgBtn.style.display = panelTools.debugMode ? 'inline-block' : 'none';
             refreshSavedImgBtn.style.display = 'none';
             tabSearch.style.background = '#2196F3';
             tabSearch.style.color = 'white';
@@ -373,7 +262,7 @@ function createSortedProductsPopup(mode = 'asc') {
             savedContainer.style.display = '';
             selectionPanel.style.display = 'none';
             refreshSearchImgBtn.style.display = 'none';
-            refreshSavedImgBtn.style.display = debugMode ? 'inline-block' : 'none';
+            refreshSavedImgBtn.style.display = panelTools.debugMode ? 'inline-block' : 'none';
             savedPanel.style.display = 'flex';
             tabSearch.style.background = 'transparent';
             tabSearch.style.color = '#666';
@@ -419,278 +308,25 @@ function createSortedProductsPopup(mode = 'asc') {
 
     closeBtn.addEventListener('click', closeDeliveryCalendar);
 
-    let debugMode = false;
-    chrome.storage.local.get(['debugMode'], d => {
-        debugMode = !!d.debugMode;
-        updateDebugVisibility();
-        if (debugMode) {
-            refreshSearchImgBtn.style.display = activeTab === 'search' ? 'inline-block' : 'none';
-            refreshSavedImgBtn.style.display = activeTab === 'saved' ? 'inline-block' : 'none';
-        }
+    const panelTools = createPanelTools({
+        get _ttHide() { return _ttHide; },
+        get activeTab() { return activeTab; },
+        get applyFilters() { return applyFilters; },
+        get cardStyleWrap() { return cardStyleWrap; },
+        get closeBtn() { return closeBtn; },
+        get counter() { return counter; },
+        get currentTiles() { return currentTiles; },
+        set currentTiles(value) { currentTiles = value; },
+        get minimizeBtn() { return minimizeBtn; },
+        get popup() { return popup; },
+        get savedContainer() { return savedContainer; },
+        get showNotification() { return showNotification; },
+        get tabsRow() { return tabsRow; },
+        get topRow() { return topRow; },
+        get updatePricePlaceholders() { return updatePricePlaceholders; },
+        get updatePriceUnitUI() { return updatePriceUnitUI; }
     });
-
-    // ── Тултип с названием карточки при наведении (можно отключить — при большом
-    //    количестве карточек может подтормаживать) ──
-    let hoverTooltipEnabled = true;
-    chrome.storage.local.get(['hoverTooltipEnabled'], d => {
-        hoverTooltipEnabled = d.hoverTooltipEnabled !== false; // по умолчанию включено
-        updateHoverBtnStyle();
-    });
-
-    function updateHoverBtnStyle() {
-        hoverBtn.style.background = hoverTooltipEnabled ? '#2196F3' : 'transparent';
-        hoverBtn.style.color = hoverTooltipEnabled ? 'white' : '#999';
-        hoverBtn.style.border = hoverTooltipEnabled ? 'none' : '1px solid #ddd';
-        hoverBtn.title = hoverTooltipEnabled
-            ? 'Подсказка с названием при наведении: включена (нажмите, чтобы отключить — полезно при тормозах на больших списках)'
-            : 'Подсказка с названием при наведении: отключена (нажмите, чтобы включить)';
-    }
-
-    function updateDebugVisibility() {
-        popup.querySelectorAll('.ppg-debug').forEach(el => {
-            el.style.display = debugMode ? 'block' : 'none';
-        });
-        debugBtn.style.background = debugMode ? '#ff9800' : 'transparent';
-        debugBtn.style.color = debugMode ? 'white' : '#999';
-        debugBtn.style.border = debugMode ? 'none' : '1px solid #ddd';
-    }
-
-    const debugBtn = document.createElement('button');
-    debugBtn.textContent = '🐛';
-    debugBtn.title = 'Debug-режим: показывать отладочную информацию на карточках';
-    debugBtn.style.cssText = `
-        padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px;
-        cursor: pointer; font-size: 13px; background: transparent; color: #999;
-        transition: all 0.15s;
-    `;
-    debugBtn.addEventListener('click', () => {
-        debugMode = !debugMode;
-        chrome.storage.local.set({ debugMode });
-        updateDebugVisibility();
-        refreshSearchImgBtn.style.display = debugMode && activeTab === 'search' ? 'inline-block' : 'none';
-        refreshSavedImgBtn.style.display = debugMode && activeTab === 'saved' ? 'inline-block' : 'none';
-    });
-
-    const hoverBtn = document.createElement('button');
-    hoverBtn.textContent = '👁';
-    hoverBtn.style.cssText = `
-        padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px;
-        cursor: pointer; font-size: 13px; background: transparent; color: #999;
-        transition: all 0.15s;
-    `;
-    hoverBtn.addEventListener('click', () => {
-        hoverTooltipEnabled = !hoverTooltipEnabled;
-        chrome.storage.local.set({ hoverTooltipEnabled });
-        updateHoverBtnStyle();
-        if (!hoverTooltipEnabled) _ttHide();
-    });
-
-    const refreshSearchImgBtn = document.createElement('button');
-    refreshSearchImgBtn.textContent = '🖼';
-    refreshSearchImgBtn.title = 'Обновить картинки в поиске (сохранить актуальные в IndexedDB)';
-    refreshSearchImgBtn.style.cssText = `
-        padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px;
-        cursor: pointer; font-size: 13px; background: transparent; color: #999;
-        transition: all 0.15s; display: none;
-    `;
-    refreshSearchImgBtn.addEventListener('click', async () => {
-        refreshSearchImgBtn.textContent = '⏳';
-        refreshSearchImgBtn.disabled = true;
-        showNotification('🔄 Принудительная загрузка картинок...');
-
-        // 1. Триггерим загрузку всех ленивых картинок на странице
-        //    через IntersectionObserver trick — делаем все img видимыми
-        if (SELECTORS) {
-            const allImgs = document.querySelectorAll(`${SELECTORS.tile} img[data-src], ${SELECTORS.tile} img[loading="lazy"]`);
-            allImgs.forEach(img => {
-                if (img.dataset.src && !img.src) img.src = img.dataset.src;
-                if (img.loading === 'lazy') img.loading = 'eager';
-                // для Intersection Observer — временно помещаем в viewport
-                const rect = img.getBoundingClientRect();
-                if (rect.top > window.innerHeight || rect.bottom < 0) {
-                    img.style.contentVisibility = 'visible';
-                }
-            });
-        }
-
-        // 2. Ждём пока картинки загрузятся (до 3 сек)
-        await new Promise(r => setTimeout(r, 1500));
-
-        // 3. Берём картинки с ЖИВЫХ элементов страницы, не из seenTiles
-        let count = 0;
-        if (SELECTORS) {
-            const liveTiles = document.querySelectorAll(SELECTORS.tile);
-            await Promise.all([...liveTiles].map(async tile => {
-                const key = getTileKey(tile);
-                if (!key) return;
-                // ищем картинку с наибольшим разрешением
-                const imgs = tile.querySelectorAll('img');
-                let bestImg = null;
-                let bestSize = 0;
-                imgs.forEach(img => {
-                    const size = (img.naturalWidth || 0) * (img.naturalHeight || 0);
-                    if (size > bestSize && img.src && !img.src.startsWith('data:')) {
-                        bestSize = size;
-                        bestImg = img;
-                    }
-                });
-                const src = bestImg?.currentSrc || bestImg?.src || '';
-                if (!src) return;
-                const dataUrl = await saveImageToBackground(key, src, true);
-                if (dataUrl) {
-                    // обновляем seenTiles
-                    const clone = tile.cloneNode(true);
-                    clone.style.width = '';
-                    clone.style.marginRight = '';
-                    seenTiles.set(key, clone);
-                    // обновляем DOM в сохранённых если открыто
-                    const savedTileEl = document.querySelector(`#products-sorted-popup .ss-tile[data-ss-key="${CSS.escape(key)}"]`);
-                    if (savedTileEl) {
-                        const wrap = savedTileEl.querySelector('.ss-tile__img-wrap');
-                        if (wrap) wrap.innerHTML = `<img src="${dataUrl}" alt="" loading="lazy">`;
-                    }
-                    count++;
-                }
-            }));
-        }
-
-        refreshSearchImgBtn.textContent = '🖼';
-        refreshSearchImgBtn.disabled = false;
-        showNotification(`✅ Обновлено ${count} картинок из поиска`);
-    });
-
-    const refreshSavedImgBtn = document.createElement('button');
-    refreshSavedImgBtn.textContent = '🖼';
-    refreshSavedImgBtn.title = 'Обновить картинки в сохранённых из текущего поиска';
-    refreshSavedImgBtn.style.cssText = `
-        padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px;
-        cursor: pointer; font-size: 13px; background: transparent; color: #999;
-        transition: all 0.15s; display: none;
-    `;
-    refreshSavedImgBtn.addEventListener('click', async () => {
-        refreshSavedImgBtn.textContent = '⏳';
-        refreshSavedImgBtn.disabled = true;
-        let count = 0;
-        const saved = await getSavedTiles();
-        await Promise.all(saved.map(async item => {
-            const liveTile = seenTiles.get(item.key);
-            if (!liveTile) return;
-            const imgEl = getBestProductImage(liveTile);
-            const src = imgEl?.currentSrc || imgEl?.src || imgEl?.dataset?.src || imgEl?.dataset?.url || '';
-            if (!src || src.startsWith('data:')) return;
-            const dataUrl = await saveImageToBackground(item.key, src, true);
-            if (dataUrl) {
-                const tileEl = savedContainer.querySelector(`.ss-tile[data-ss-key="${CSS.escape(item.key)}"]`);
-                if (tileEl) {
-                    const wrap = tileEl.querySelector('.ss-tile__img-wrap');
-                    if (wrap) wrap.innerHTML = `<img src="${dataUrl}" alt="" loading="lazy">`;
-                }
-                count++;
-            }
-        }));
-        refreshSavedImgBtn.textContent = '🖼';
-        refreshSavedImgBtn.disabled = false;
-        showNotification(`✅ Обновлено ${count} картинок в сохранённых`);
-    });
-
-    // Обновление атрибутов карточек — вручную, когда сайт дорисовал рейтинг/отзывы позже.
-    const refreshAttrsBtn = document.createElement('button');
-    refreshAttrsBtn.type = 'button';
-    refreshAttrsBtn.textContent = '🔄';
-    refreshAttrsBtn.title = 'Повторно считать атрибуты карточек (рейтинг, отзывы, цена и т.д.)';
-    refreshAttrsBtn.style.cssText = `padding:6px 10px;border:1px solid #ddd;border-radius:6px;cursor:pointer;font-size:13px;background:transparent;color:#999;`;
-    refreshAttrsBtn.addEventListener('click', async () => {
-        refreshAttrsBtn.textContent = '⏳';
-        refreshAttrsBtn.disabled = true;
-        try {
-            collectTiles();
-            await new Promise(r => setTimeout(r, 80));
-            currentTiles = [...seenTiles.values()];
-            updatePricePlaceholders(currentTiles);
-            applyFilters();
-            showNotification('✅ Атрибуты карточек обновлены');
-        } catch (e) {
-            showNotification('⚠️ Не удалось обновить атрибуты', 'warning');
-        } finally {
-            refreshAttrsBtn.textContent = '🔄';
-            refreshAttrsBtn.disabled = false;
-        }
-    });
-
-    const badgeSettingsBtn = document.createElement('button');
-    badgeSettingsBtn.type = 'button';
-    badgeSettingsBtn.textContent = '🏷️';
-    badgeSettingsBtn.title = 'Настройка бейджа цены за единицу';
-    badgeSettingsBtn.style.cssText = `padding:6px 10px;border:1px solid #ddd;border-radius:6px;cursor:pointer;font-size:13px;background:transparent;color:#999;`;
-    badgeSettingsBtn.addEventListener('click', () => {
-        const old = document.getElementById('ss-ppg-settings-menu');
-        if (old) { old.remove(); return; }
-        const menu = document.createElement('div');
-        menu.id = 'ss-ppg-settings-menu';
-        menu.style.cssText = `position:fixed;left:58px;top:50%;transform:translateY(-50%);z-index:2147483647;background:#fff;border:1px solid #ddd;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.22);padding:10px;width:210px;font:12px sans-serif;color:#333;`;
-        const title=document.createElement('div'); title.textContent='🏷️ Бейдж цены/ед.'; title.style.cssText='font-weight:700;margin-bottom:8px;'; menu.appendChild(title);
-        const visibleRow=document.createElement('label'); visibleRow.style.cssText='display:flex;align-items:center;gap:7px;margin-bottom:9px;cursor:pointer;';
-        const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=ppgBadgeVisible;
-        cb.onchange=()=>{ppgBadgeVisible=cb.checked; chrome.storage.local.set({ppgBadgeVisible}); updateAllPpgBadges();};
-        visibleRow.appendChild(cb); visibleRow.appendChild(document.createTextNode('Показывать бейдж')); menu.appendChild(visibleRow);
-        const modeLabel=document.createElement('div'); modeLabel.textContent='Что показывать в бейдже:'; modeLabel.style.cssText='font-size:11px;color:#777;margin-bottom:5px;'; menu.appendChild(modeLabel);
-        const modeSelect=document.createElement('select'); modeSelect.style.cssText='width:100%;padding:5px 7px;border:1px solid #ddd;border-radius:6px;font-size:11px;background:#fff;margin-bottom:9px;';
-        [['all','Все уникальные величины'],['current','Только текущая величина']].forEach(([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;modeSelect.appendChild(o);});
-        modeSelect.value=ppgBadgeMode; modeSelect.onchange=()=>{ppgBadgeMode=modeSelect.value==='current'?'current':'all';chrome.storage.local.set({ppgBadgeMode});try{applyFilters();}catch(_){} };
-        menu.appendChild(modeSelect);
-        const hint=document.createElement('div'); hint.style.cssText='font-size:9.5px;color:#999;line-height:1.3;margin:-3px 0 9px;'; hint.textContent='«Текущая» = выбранный приоритет (или Авто для каждой карточки).'; menu.appendChild(hint);
-
-        // Единица отображения по категориям: кг↔г, л↔мл, мм↔см↔м и т.п.
-        // Влияет на бейдж, фильтр «Цена/ед.» и сортировку одновременно (единый источник истины).
-        const unitsLabel=document.createElement('div'); unitsLabel.textContent='Единица в цене/ед.:'; unitsLabel.title='Любое обозначение из настроек единиц для этой категории: кг/г, л/мл, шт/таблетка/капсула и т.п. Меняет только подпись — расчёт остаётся точным.'; unitsLabel.style.cssText='font-size:11px;color:#777;margin-bottom:5px;'; menu.appendChild(unitsLabel);
-        Object.keys(UNITS || {})
-            .sort((a, b) => clampPriority(UNITS[a]?.priority, a) - clampPriority(UNITS[b]?.priority, b))
-            .forEach(category => {
-            const choices = getCategoryUnitChoices(category);
-            if (choices.length < 2) return; // нечего переключать (например, «шт» — единственный вариант)
-            const row=document.createElement('div'); row.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:6px;';
-            const lab=document.createElement('span'); lab.textContent=getCategoryDisplayName(category); lab.style.cssText='font-size:11px;color:#555;';
-            const sel=document.createElement('select'); sel.style.cssText='flex:0 0 auto;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;background:#fff;';
-            choices.forEach(({unit})=>{const o=document.createElement('option');o.value=unit;o.textContent=`₽/${unit}`;sel.appendChild(o);});
-            sel.value = badgeDisplayUnit[category] || FALLBACK_CANONICAL_UNIT[category] || choices[choices.length-1].unit;
-            sel.onchange=()=>{
-                badgeDisplayUnit={...badgeDisplayUnit,[category]:sel.value};
-                chrome.storage.local.set({badgeDisplayUnit});
-                try{updateAllPpgBadges();}catch(_){}
-                try{updatePriceUnitUI();}catch(_){}
-                try{applyFilters();}catch(_){}
-            };
-            row.appendChild(lab); row.appendChild(sel); menu.appendChild(row);
-        });
-        const unitsHint=document.createElement('div'); unitsHint.style.cssText='font-size:9.5px;color:#999;line-height:1.3;margin:-2px 0 9px;'; unitsHint.textContent='Меняет только подпись в бейдже/фильтре/сортировке — сравнение и фильтрация по-прежнему точные.'; menu.appendChild(unitsHint);
-
-        const posLabel=document.createElement('div'); posLabel.textContent='Угол области картинки:'; posLabel.style.cssText='font-size:11px;color:#777;margin-bottom:5px;'; menu.appendChild(posLabel);
-        const posGrid=document.createElement('div'); posGrid.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:5px;';
-        [['top-left','↖'],['top-right','↗'],['bottom-left','↙'],['bottom-right','↘']].forEach(([pos,icon])=>{const b=document.createElement('button');b.type='button';b.textContent=icon;b.title=pos;b.dataset.ppgPos=pos;b.style.cssText=`padding:6px;border:1px solid ${ppgBadgePosition===pos?'#2196F3':'#ddd'};border-radius:6px;background:${ppgBadgePosition===pos?'#eef6ff':'#fff'};cursor:pointer;font-size:16px;`;b.onclick=()=>{ppgBadgePosition=pos;chrome.storage.local.set({ppgBadgePosition});updateAllPpgBadges();posGrid.querySelectorAll('[data-ppg-pos]').forEach(x=>{x.style.borderColor=x.dataset.ppgPos===pos?'#2196F3':'#ddd';x.style.background=x.dataset.ppgPos===pos?'#eef6ff':'#fff';});};posGrid.appendChild(b);});
-        menu.appendChild(posGrid); document.body.appendChild(menu);
-        const close=ev=>{if(!menu.contains(ev.target)&&ev.target!==badgeSettingsBtn){menu.remove();document.removeEventListener('mousedown',close);}};
-        setTimeout(()=>document.addEventListener('mousedown',close),0);
-    });
-
-    // Группа служебных кнопок — всегда занимает одинаковое место, не двигает counter
-    const toolBtnGroup = document.createElement('div');
-    toolBtnGroup.style.cssText = 'display:flex; align-items:center; gap:2px; flex-shrink:0;';
-    toolBtnGroup.appendChild(refreshSearchImgBtn);
-    toolBtnGroup.appendChild(refreshSavedImgBtn);
-    toolBtnGroup.appendChild(refreshAttrsBtn);
-    toolBtnGroup.appendChild(badgeSettingsBtn);
-    toolBtnGroup.appendChild(debugBtn);
-    toolBtnGroup.appendChild(hoverBtn);
-
-    topRow.appendChild(tabsRow);
-    topRow.appendChild(cardStyleWrap);
-    topRow.appendChild(counter);
-    // topRow.appendChild(scaleWrap);
-    topRow.appendChild(toolBtnGroup);
-    topRow.appendChild(minimizeBtn);
-    topRow.appendChild(closeBtn);
-
-    // Строка сортировки
+    const { refreshSavedImgBtn, refreshSearchImgBtn, toolBtnGroup, updateDebugVisibility } = panelTools;
     let currentMode = mode;
     let priceFilterByUnit = false;
 
@@ -822,239 +458,28 @@ function createSortedProductsPopup(mode = 'asc') {
 
 
     // ── кнопки группировки похожих ─────────────────────────────────────────────
-    const btnCSS = `padding:4px 10px; font-size:12px; border-radius:6px; cursor:pointer;
-        border:1px solid #ccc; background:#fff; color:#555;
-        transition:all 0.15s; white-space:nowrap;`;
-
-    const groupBtn = document.createElement('button');
-    groupBtn.textContent = '👁 Похожие';
-    groupBtn.title = 'Группировать карточки по визуальному сходству';
-    groupBtn.style.cssText = btnCSS;
-
-    const imgSearchBtn = document.createElement('button');
-    imgSearchBtn.textContent = '🖼 По картинке';
-    imgSearchBtn.title = 'Найти похожие на указанное изображение';
-    imgSearchBtn.style.cssText = btnCSS + 'display:none;';
-
-    // переключатель вида: «строки» vs «сетка»
-    const layoutBtn = document.createElement('button');
-    layoutBtn.title = 'Переключить вид групп';
-    layoutBtn.style.cssText = btnCSS + 'display:none; padding:4px 8px;';
-    layoutBtn.textContent = '☰';  // строки
-
-    function invalidateGroupCache() {
-        _searchGroupCache = null;
-        _savedGroupCache = null;
-    }
-    window._invalidateGroupCache = invalidateGroupCache;
-
-    function updateGroupBtnStyle() {
-        groupBtn.style.background = groupingActive ? '#2196F3' : '#fff';
-        groupBtn.style.color = groupingActive ? '#fff' : '#555';
-        groupBtn.style.borderColor = groupingActive ? '#2196F3' : '#ccc';
-        imgSearchBtn.style.display = groupingActive ? '' : 'none';
-        layoutBtn.style.display = groupingActive ? '' : 'none';
-        if (!groupingActive) {
-            imgSearchBtn.textContent = '🖼 По картинке';
-            imgSearchBtn.style.background = '#fff';
-            imgSearchBtn.style.borderColor = '#ccc';
-            imgSearchBtn.style.color = '#555';
-        }
-    }
-
-    function updateLayoutBtnStyle() {
-        layoutBtn.textContent = groupLayout === 'rows' ? '⠿' : '☰';
-        layoutBtn.title = groupLayout === 'rows' ? 'Вид: плитка (группы идут подряд с разделителями)' : 'Вид: строки (каждая группа с новой строки)';
-    }
-    updateLayoutBtnStyle();
-
-    groupBtn.addEventListener('click', () => {
-        groupingActive = !groupingActive;
-        if (!groupingActive) { referenceFeatures = null; referenceImgSrc = null; }
-        updateGroupBtnStyle();
-        invalidateGroupCache();
-        if (activeTab === 'search') renderTiles(getFilteredAndSorted(searchInput.value));
-        else renderSavedTiles();
+    const { groupBtn, imgInput, imgSearchBtn, invalidateGroupCache, layoutBtn, destroy: destroyImageSearch } = createImageSearchControls({
+        get _savedGroupCache() { return _savedGroupCache; },
+        set _savedGroupCache(value) { _savedGroupCache = value; },
+        get _searchGroupCache() { return _searchGroupCache; },
+        set _searchGroupCache(value) { _searchGroupCache = value; },
+        get activeTab() { return activeTab; },
+        get getFilteredAndSorted() { return getFilteredAndSorted; },
+        get groupLayout() { return groupLayout; },
+        set groupLayout(value) { groupLayout = value; },
+        get groupingActive() { return groupingActive; },
+        set groupingActive(value) { groupingActive = value; },
+        get popup() { return popup; },
+        get referenceFeatures() { return referenceFeatures; },
+        set referenceFeatures(value) { referenceFeatures = value; },
+        get referenceImgSrc() { return referenceImgSrc; },
+        set referenceImgSrc(value) { referenceImgSrc = value; },
+        get renderSavedTiles() { return renderSavedTiles; },
+        get renderTiles() { return renderTiles; },
+        get searchInput() { return searchInput; },
+        get showNotification() { return showNotification; },
+        get uiRoot() { return uiRoot; }
     });
-
-    layoutBtn.addEventListener('click', () => {
-        groupLayout = groupLayout === 'rows' ? 'flow' : 'rows';
-        updateLayoutBtnStyle();
-        if (activeTab === 'search') renderTiles(getFilteredAndSorted(searchInput.value));
-        else renderSavedTiles();
-    });
-
-    // ── поиск по картинке ──────────────────────────────────────────────────────
-    const imgInput = document.createElement('input');
-    imgInput.type = 'file';
-    imgInput.accept = 'image/*';
-    imgInput.style.display = 'none';
-
-    // Общая функция обработки изображения из любого источника
-    async function processReferenceImage(blob) {
-        closeImgPickerPopup();
-        const url = URL.createObjectURL(blob);
-        referenceImgSrc = url;
-        imgSearchBtn.textContent = '⏳ Анализ...';
-        imgSearchBtn.disabled = true;
-        try {
-            const imgData = await getImageDataFromSrc(url);
-            referenceFeatures = { phash: computePHash(imgData), hist: computeColorHistogram(imgData) };
-        } finally {
-            URL.revokeObjectURL(url);
-        }
-        imgSearchBtn.textContent = '🖼 По картинке ✓';
-        imgSearchBtn.style.background = '#e8f5e9';
-        imgSearchBtn.style.borderColor = '#81c784';
-        imgSearchBtn.style.color = '#2e7d32';
-        imgSearchBtn.disabled = false;
-        invalidateGroupCache();
-        if (activeTab === 'search') renderTiles(getFilteredAndSorted(searchInput.value));
-        else renderSavedTiles();
-    }
-
-    imgInput.addEventListener('change', async () => {
-        const file = imgInput.files[0];
-        if (!file) return;
-        imgInput.value = '';
-        await processReferenceImage(file);
-    });
-
-    // ── Попап выбора изображения ──────────────────────────────────────────────
-    let imgPickerPopup = null;
-
-    function closeImgPickerPopup() {
-        if (imgPickerPopup) { imgPickerPopup.remove(); imgPickerPopup = null; }
-    }
-
-    function openImgPickerPopup() {
-        if (imgPickerPopup) { closeImgPickerPopup(); return; }
-
-        imgPickerPopup = document.createElement('div');
-        imgPickerPopup.style.cssText = `
-            position:absolute; z-index:10000;
-            background:#fff; border:1px solid #ddd; border-radius:12px;
-            box-shadow:0 4px 20px rgba(0,0,0,.18);
-            padding:14px 16px; width:260px;
-            display:flex; flex-direction:column; gap:10px;
-        `;
-
-        // Позиционируем под кнопкой
-        const btnRect = imgSearchBtn.getBoundingClientRect();
-        const popupRect = popup.getBoundingClientRect();
-        imgPickerPopup.style.top = (btnRect.bottom - popupRect.top + 6) + 'px';
-        imgPickerPopup.style.left = (btnRect.left - popupRect.left) + 'px';
-
-        // Заголовок
-        const title = document.createElement('div');
-        title.textContent = 'Выбрать изображение';
-        title.style.cssText = 'font-size:13px; font-weight:bold; color:#333;';
-
-        // Зона drag-and-drop / вставки
-        const dropZone = document.createElement('div');
-        dropZone.style.cssText = `
-            border:2px dashed #bbb; border-radius:8px;
-            padding:18px 10px; text-align:center;
-            font-size:12px; color:#888; cursor:pointer;
-            transition: border-color .15s, background .15s;
-            user-select:none;
-        `;
-        dropZone.innerHTML = '📋 Вставьте (Ctrl+V)<br>или перетащите картинку сюда';
-
-        // При фокусе зоны — принимаем Ctrl+V
-        dropZone.tabIndex = 0;
-        dropZone.addEventListener('keydown', async (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-                e.preventDefault();
-                e.stopPropagation();
-                // paste-событие не приходит на div — читаем через clipboardData вручную
-                // нужно сфокусировать hidden input и симулировать paste
-                pasteInput.focus();
-            }
-        });
-
-        // Highlight on drag
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.style.borderColor = '#2196F3';
-            dropZone.style.background = '#e3f2fd';
-        });
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.style.borderColor = '#bbb';
-            dropZone.style.background = '';
-        });
-        dropZone.addEventListener('drop', async (e) => {
-            e.preventDefault();
-            dropZone.style.borderColor = '#bbb';
-            dropZone.style.background = '';
-            const file = [...(e.dataTransfer.files || [])].find(f => f.type.startsWith('image/'));
-            if (file) { await processReferenceImage(file); return; }
-            // Может быть img-элемент перетащен из страницы
-            const url = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
-            if (url && /^https?:\/\//.test(url)) {
-                try {
-                    const resp = await fetch(url);
-                    const blob = await resp.blob();
-                    if (blob.type.startsWith('image/')) { await processReferenceImage(blob); return; }
-                } catch (_) { }
-            }
-            showNotification('⚠️ Не удалось получить изображение из перетащенного объекта.');
-        });
-        dropZone.addEventListener('click', () => pasteInput.focus());
-
-        // Скрытый contenteditable — ловит системный paste (Ctrl+V) без запроса разрешений
-        const pasteInput = document.createElement('div');
-        pasteInput.contentEditable = 'true';
-        pasteInput.style.cssText = 'position:absolute; opacity:0; width:1px; height:1px; overflow:hidden; pointer-events:none;';
-        pasteInput.addEventListener('paste', async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const items = e.clipboardData?.items;
-            if (!items) return;
-            for (const item of items) {
-                if (item.type.startsWith('image/')) {
-                    const blob = item.getAsFile();
-                    if (blob) { await processReferenceImage(blob); return; }
-                }
-            }
-            showNotification('⚠️ В буфере нет изображения.');
-        });
-
-        // Кнопка «Выбрать файл»
-        const fileBtn = document.createElement('button');
-        fileBtn.textContent = '📁 Выбрать файл с компьютера';
-        fileBtn.style.cssText = `
-            padding:8px 12px; border:1px solid #ddd; border-radius:8px;
-            cursor:pointer; font-size:12px; background:#f5f5f5; color:#333;
-            text-align:left; transition: background .15s;
-        `;
-        fileBtn.addEventListener('mouseenter', () => fileBtn.style.background = '#ececec');
-        fileBtn.addEventListener('mouseleave', () => fileBtn.style.background = '#f5f5f5');
-        fileBtn.addEventListener('click', () => { imgInput.click(); });
-
-        imgPickerPopup.appendChild(title);
-        imgPickerPopup.appendChild(dropZone);
-        imgPickerPopup.appendChild(pasteInput);
-        imgPickerPopup.appendChild(fileBtn);
-        uiRoot.appendChild(imgPickerPopup);
-
-        // Автофокус на pasteInput чтобы сразу принимать Ctrl+V
-        setTimeout(() => pasteInput.focus(), 50);
-
-        // Закрываем по клику снаружи
-        const outsideClick = (e) => {
-            if (!imgPickerPopup) return;
-            if (!imgPickerPopup.contains(e.target) && e.target !== imgSearchBtn) {
-                closeImgPickerPopup();
-                document.removeEventListener('mousedown', outsideClick, true);
-            }
-        };
-        document.addEventListener('mousedown', outsideClick, true);
-    }
-
-    imgSearchBtn.addEventListener('click', openImgPickerPopup);
-
-    // ── Разделитель ──
     const Divider1 = document.createElement('span');
     Divider1.textContent = '│';
     Divider1.style.cssText = 'color:#ddd; font-size:16px;';
@@ -1073,321 +498,9 @@ function createSortedProductsPopup(mode = 'asc') {
 
     // Обёртка нужна только для позиционирования подсказки-автокомплита
     // ровно под полем поиска (position:relative + absolute внутри).
-    const searchInputWrap = document.createElement('div');
-    searchInputWrap.style.cssText = 'position:relative; flex:1; display:flex;';
-
-    const searchInput = document.createElement('textarea');
-    searchInput.rows = 1;
-    searchInput.placeholder = '🔍 Например: корм @цена({500-1000}) @рейтинг({4.5-5}) @сортировка(цена, возр)';
-    searchInput.style.cssText = `
-        flex:1; min-width:0; min-height:38px; max-height:120px;
-        padding:8px 12px; border:1px solid #ddd; border-radius:6px;
-        font:14px sans-serif; line-height:20px; outline:none; resize:none;
-        overflow-x:hidden; overflow-y:hidden; box-sizing:border-box;
-    `;
-    function autoResizeSearchInput() {
-        const maxHeight = 120;
-        searchInput.style.height = 'auto';
-        const h = Math.min(Math.max(searchInput.scrollHeight, 38), maxHeight);
-        searchInput.style.height = h + 'px';
-        searchInput.style.overflowY = searchInput.scrollHeight > maxHeight ? 'auto' : 'hidden';
-    }
-    let _searchResizeRaf = null;
-    function scheduleAutoResizeSearchInput() {
-        // rAF вместо прямого вызова на каждый input — сам по себе ресайз
-        // читает scrollHeight (форсирует layout), это дешевле делать один раз
-        // за кадр, чем на каждое нажатие клавиши подряд при быстром наборе.
-        if (_searchResizeRaf != null) return;
-        _searchResizeRaf = requestAnimationFrame(() => {
-            _searchResizeRaf = null;
-            autoResizeSearchInput();
-        });
-    }
-    searchInput.addEventListener('input', scheduleAutoResizeSearchInput);
-    searchInputWrap.appendChild(searchInput);
-
-    // ── Автодополнение @атрибутов и подсказки диапазонов ──
-    // Данные берутся ИСКЛЮЧИТЕЛЬНО из attributeSuggestCache (см.
-    // rebuildAttributeSuggestCache), который пересчитывается только при
-    // обновлении набора карточек (там же, где остальные плейсхолдеры), а
-    // не при каждом нажатии клавиши. Здесь — только чтение кэша и
-    // лёгкий разбор текста самого поля ввода, поэтому рекурсий и
-    // повторных проходов по карточкам тут нет.
-    const attrAutocomplete = document.createElement('div');
-    attrAutocomplete.style.cssText = `
-        display:none; position:absolute; top:calc(100% + 4px); left:0; right:0;
-        background:#fff; border:1px solid #ddd; border-radius:8px;
-        box-shadow:0 4px 14px rgba(0,0,0,0.15); z-index:100000;
-        max-height:260px; overflow:auto; font-size:12px;
-    `;
-    searchInputWrap.appendChild(attrAutocomplete);
-
-    let attrAcItems = [];      // текущие варианты для режима 'name'
-    let attrAcHighlight = -1;  // индекс подсвеченного варианта
-    let attrAcMode = 'none';   // 'none' | 'name' | 'value'
-    let attrAcNameStart = -1;  // индекс начала «@имя» для замены при выборе
-
-    function hideAttrAutocomplete() {
-        attrAutocomplete.style.display = 'none';
-        attrAcMode = 'none';
-        attrAcItems = [];
-        attrAcHighlight = -1;
-    }
-
-    // Определяет, что сейчас происходит в позиции курсора:
-    // — печатается имя атрибута после '@' (mode:'name'),
-    // — курсор внутри уже открытых скобок '@имя(...)' (mode:'value'),
-    // — ни то, ни другое (mode:'none').
-    // Однопроходный разбор без рекурсии, стоимость — O(длины строки поиска).
-    function getAttrCursorContext(text, pos) {
-        const s = text.slice(0, pos);
-        const stack = [];
-        let i = 0;
-        while (i < s.length) {
-            const ch = s[i];
-            if (ch === '@') {
-                let j = i + 1;
-                while (j < s.length && /[\p{L}\p{N}_\/.-]/u.test(s[j])) j++;
-                const name = s.slice(i + 1, j);
-                if (s[j] === '(') {
-                    stack.push(name);
-                    i = j + 1;
-                    continue;
-                }
-                if (j === s.length && name.length >= 0) {
-                    return { mode: 'name', prefix: name, start: i };
-                }
-                i = j;
-                continue;
-            }
-            if (ch === '(') { stack.push(null); i++; continue; }
-            if (ch === ')') { if (stack.length) stack.pop(); i++; continue; }
-            i++;
-        }
-        for (let k = stack.length - 1; k >= 0; k--) {
-            if (stack[k] != null) return { mode: 'value', name: stack[k] };
-        }
-        return { mode: 'none' };
-    }
-
-    function renderAttrAcNameList(items) {
-        attrAutocomplete.innerHTML = '';
-        if (!items.length) { hideAttrAutocomplete(); return; }
-        items.forEach((entry, idx) => {
-            const row = document.createElement('div');
-            row.style.cssText = `
-                padding:6px 10px; cursor:pointer; display:flex; gap:8px;
-                align-items:baseline; justify-content:space-between;
-                background:${idx === attrAcHighlight ? '#e3f2fd' : '#fff'};
-            `;
-            const nameEl = document.createElement('span');
-            nameEl.textContent = '@' + entry.name;
-            nameEl.style.cssText = 'font-weight:600; color:#1565C0; white-space:nowrap;';
-            const hintEl = document.createElement('span');
-            hintEl.textContent = entry.hint || '';
-            hintEl.style.cssText = 'color:#888; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:ltr; text-align:left;';
-            row.appendChild(nameEl);
-            row.appendChild(hintEl);
-            // mousedown, а не click — чтобы выбор срабатывал раньше blur'а поля.
-            row.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                selectAttrAcItem(entry);
-            });
-            row.addEventListener('mouseenter', () => {
-                attrAcHighlight = idx;
-                [...attrAutocomplete.children].forEach((c, i2) => {
-                    c.style.background = i2 === attrAcHighlight ? '#e3f2fd' : '#fff';
-                });
-            });
-            attrAutocomplete.appendChild(row);
-        });
-        attrAutocomplete.style.display = 'block';
-    }
-
-    function renderAttrAcHint(name) {
-        // @сортировка — специальная DSL-команда, а не атрибут карточки.
-        if (name.trim().toLowerCase() === 'сортировка') {
-            attrAutocomplete.innerHTML = '';
-            const row = document.createElement('div');
-            row.style.cssText = 'padding:6px 10px; color:#666;';
-            row.textContent = 'Сортировка: @сортировка(поле, возр/убыв) · для текста также а-я / я-а';
-            attrAutocomplete.appendChild(row);
-            attrAutocomplete.style.display = 'block';
-            return;
-        }
-        const entry = attributeSuggestCache.find(e => e.name.toLowerCase() === name.trim().toLowerCase());
-        attrAutocomplete.innerHTML = '';
-        const row = document.createElement('div');
-        row.style.cssText = 'padding:6px 10px; color:#666;';
-        if (!entry) {
-            row.textContent = `Атрибут «${name}» не встречается среди текущих карточек`;
-            row.style.color = '#b26a00';
-        } else if (entry.static) {
-            row.textContent = entry.hint || `@${entry.name}`;
-        } else if (entry.hint) {
-            row.textContent = (entry.kind.endsWith('text') ? 'Например: ' : 'Диапазон: ') + entry.hint;
-        } else {
-            row.textContent = `@${entry.name} — значения не найдены среди текущих карточек`;
-        }
-        attrAutocomplete.appendChild(row);
-        attrAutocomplete.style.display = 'block';
-    }
-
-    function selectAttrAcItem(entry) {
-        const value = searchInput.value;
-        const before = value.slice(0, attrAcNameStart);
-        const afterCursorIdx = searchInput.selectionStart ?? value.length;
-        const after = value.slice(afterCursorIdx);
-        let insertion;
-        if (entry.sortStage === 'field') insertion = entry.name + ', ';
-        else if (entry.sortStage === 'direction') insertion = entry.name + ')';
-        else insertion = '@' + entry.name + '(';
-        // Для выбора поля сортировки заменяем только текущую часть после '('.
-        if (entry.sortStage) {
-            const cursor = afterCursorIdx;
-            const query = value.slice(0, cursor);
-            const open = query.lastIndexOf('(');
-            const comma = query.lastIndexOf(',');
-            const start = entry.sortStage === 'field' ? open + 1 : comma + 1;
-            const prefixBefore = value.slice(0, start);
-            searchInput.value = prefixBefore + insertion + after;
-            const newPos = (prefixBefore + insertion).length;
-            searchInput.focus();
-            searchInput.setSelectionRange(newPos, newPos);
-            hideAttrAutocomplete();
-            searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-            return;
-        }
-        searchInput.value = before + insertion + after;
-        const newPos = (before + insertion).length;
-        searchInput.focus();
-        searchInput.setSelectionRange(newPos, newPos);
-        hideAttrAutocomplete();
-        // Единое событие 'input' обновит и обычную фильтрацию, и подсказку
-        // под новым контекстом (мы теперь внутри скобок) — оба обработчика
-        // уже подписаны на этот же событие, повторный вызов не нужен.
-        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-
-    function getDslSortFieldTypeForAutocomplete(fieldName) {
-        const n = normalizeSortFieldName(fieldName);
-        if (['цена','price','цена/ед.','цена/ед','цена за ед.','цена за единицу','price/unit',
-             'рейтинг','rating','отзывы','отзыв','reviews','доставка','дата','delivery'].includes(n)) return 'number';
-        if (['название','товар','name','title'].includes(n)) return 'text';
-        const entry = attributeSuggestCache.find(e => normalizeSortFieldName(e.name) === n);
-        if (!entry) return 'text';
-        return String(entry.kind || '').includes('quantity') || String(entry.kind || '').includes('number') || String(entry.kind || '').includes('date')
-            ? 'number'
-            : 'text';
-    }
-
-    // Пересчитывает ТОЛЬКО отображение подсказки под текущим положением
-    // курсора — без обращения к карточкам страницы (все данные уже в
-    // attributeSuggestCache). Вызывается на каждый ввод символа — это
-    // дёшево (перебор кэша из нескольких десятков атрибутов максимум).
-    function refreshAttributeAutocompleteUi() {
-        const searchRootActive = uiRoot.activeElement || document.activeElement;
-        if (searchRootActive !== searchInput) { hideAttrAutocomplete(); return; }
-        const pos = searchInput.selectionStart ?? searchInput.value.length;
-        const ctx = getAttrCursorContext(searchInput.value, pos);
-        if (ctx.mode === 'name') {
-            const prefix = ctx.prefix.toLowerCase();
-            attrAcNameStart = ctx.start;
-            attrAcMode = 'name';
-            // Специальные DSL-команды участвуют в том же автодополнении,
-            // но не зависят от наличия одноимённого атрибута в карточках.
-            const specialEntries = [{
-                name: 'сортировка',
-                kind: 'special-sort',
-                hint: 'поле, возр/убыв · текст: а-я/я-а'
-            }];
-            const allEntries = [...specialEntries, ...attributeSuggestCache];
-            const starts = allEntries.filter(e => e.name.toLowerCase().startsWith(prefix));
-            const includes = allEntries.filter(e => !e.name.toLowerCase().startsWith(prefix) && e.name.toLowerCase().includes(prefix));
-            attrAcItems = prefix ? [...starts, ...includes].slice(0, 10) : allEntries.slice(0, 10);
-            attrAcHighlight = -1;
-            renderAttrAcNameList(attrAcItems);
-        } else if (ctx.mode === 'value') {
-            // Контекстное автодополнение внутри @сортировка(...).
-            // Сначала предлагаем поля, после запятой — допустимые направления.
-            if (String(ctx.name || '').trim().toLowerCase() === 'сортировка') {
-                const beforeCursor = searchInput.value.slice(0, pos);
-                const open = beforeCursor.lastIndexOf('@сортировка');
-                const inside = open >= 0 ? beforeCursor.slice(beforeCursor.indexOf('(', open) + 1) : '';
-                const parts = inside.split(',');
-                const builtins = [
-                    {name:'цена', hint:'число'}, {name:'цена/ед.', hint:'число'},
-                    {name:'рейтинг', hint:'число'}, {name:'отзывы', hint:'число'},
-                    {name:'доставка', hint:'дата'}, {name:'название', hint:'текст'}
-                ];
-                if (parts.length <= 1) {
-                    const prefix = (parts[0] || '').trim().toLowerCase();
-                    const seen = new Set();
-                    const fields = [...builtins, ...attributeSuggestCache].filter(e => {
-                        const key = String(e.name).toLowerCase();
-                        if (seen.has(key)) return false;
-                        seen.add(key);
-                        return !prefix || key.includes(prefix);
-                    }).slice(0, 12).map(e => ({...e, sortStage:'field'}));
-                    attrAcMode = 'sort'; attrAcItems = fields; attrAcHighlight = -1;
-                    renderAttrAcNameList(fields);
-                } else {
-                    const prefix = (parts[parts.length - 1] || '').trim().toLowerCase();
-                    const fieldName = (parts[0] || '').trim();
-                    const fieldType = getDslSortFieldTypeForAutocomplete(fieldName);
-                    const dirs = fieldType === 'text'
-                        ? [
-                            {name:'а-я', hint:'по алфавиту', sortStage:'direction'},
-                            {name:'я-а', hint:'обратный алфавит', sortStage:'direction'}
-                        ]
-                        : [
-                            {name:'возр', hint:'по возрастанию', sortStage:'direction'},
-                            {name:'убыв', hint:'по убыванию', sortStage:'direction'}
-                        ];
-                    const filteredDirs = dirs.filter(e => !prefix || e.name.startsWith(prefix));
-                    attrAcMode = 'sort'; attrAcItems = filteredDirs; attrAcHighlight = -1;
-                    renderAttrAcNameList(filteredDirs);
-                }
-            } else {
-                attrAcMode = 'value';
-                attrAcItems = [];
-                renderAttrAcHint(ctx.name);
-            }
-        } else {
-            hideAttrAutocomplete();
-        }
-    }
-
-    searchInput.addEventListener('input', refreshAttributeAutocompleteUi);
-    searchInput.addEventListener('click', refreshAttributeAutocompleteUi);
-    searchInput.addEventListener('focus', refreshAttributeAutocompleteUi);
-    searchInput.addEventListener('blur', () => {
-        // Небольшая задержка, чтобы mousedown по варианту в списке успел
-        // сработать раньше, чем скроется сам список.
-        setTimeout(() => {
-            const searchRootActive = uiRoot.activeElement || document.activeElement;
-            if (searchRootActive !== searchInput) hideAttrAutocomplete();
-        }, 120);
-    });
-    searchInput.addEventListener('keydown', (e) => {
-        if ((attrAcMode !== 'name' && attrAcMode !== 'sort') || !attrAcItems.length) {
-            if (e.key === 'Escape') hideAttrAutocomplete();
-            return;
-        }
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            attrAcHighlight = (attrAcHighlight + 1) % attrAcItems.length;
-            renderAttrAcNameList(attrAcItems);
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            attrAcHighlight = (attrAcHighlight - 1 + attrAcItems.length) % attrAcItems.length;
-            renderAttrAcNameList(attrAcItems);
-        } else if (e.key === 'Enter' || e.key === 'Tab') {
-            const pick = attrAcItems[attrAcHighlight >= 0 ? attrAcHighlight : 0];
-            if (pick) { e.preventDefault(); selectAttrAcItem(pick); }
-        } else if (e.key === 'Escape') {
-            hideAttrAutocomplete();
-        }
+    const { refreshAttributeAutocompleteUi, searchInput, searchInputWrap, destroy: destroySearchEditor } = createSearchEditor({
+        get attributeSuggestCache() { return attributeSuggestions.attributeSuggestCache; },
+        get uiRoot() { return uiRoot; }
     });
 
     const clearBtn = document.createElement('button');
@@ -1398,112 +511,9 @@ function createSortedProductsPopup(mode = 'asc') {
         border: none; border-radius: 6px; cursor: pointer;
     `;
 
-    const hint = document.createElement('span');
-    hint.textContent = '?';
-    hint.style.cssText = `
-        display: inline-flex; align-items: center; justify-content: center;
-        width: 28px; height: 28px; border-radius: 50%;
-        background: #6c757d; color: white;
-        font-size: 12px; font-weight: bold;
-        cursor: help; flex-shrink: 0; user-select: none;
-        position: relative;
-    `;
+    const { hint, destroy: destroySearchHelp } = createSearchHelp({
 
-    const searchTooltip = document.createElement('div');
-    searchTooltip.style.cssText = `
-        display: none; position: absolute; top: calc(100% + 8px); right: 0;
-        background: #333; color: white; padding: 10px 14px;
-        border-radius: 8px; font-size: 12px; line-height: 1.6;
-        white-space: pre; z-index: 100000;
-        max-width: min(620px, calc(100vw - 32px));
-        max-height: min(70vh, 620px);
-        overflow: auto;
-        box-sizing: border-box;
-        scrollbar-width: auto;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        pointer-events: auto;
-        overscroll-behavior: contain;
-        -webkit-overflow-scrolling: touch;
-    `;
-    searchTooltip.textContent = `Спецсимволы:
-  *  — любое кол-во символов     farm* → farmina, farmland
-  ?  — ровно один символ         кошк? → кошка, кошки
-  [аб] — один из символов         к[ио]т → кот, кит
-  {N...M} — число в диапазоне     {0.5...2} → «корм 1 кг», «500г»
-       Также: {1-2}, {1..2}, {1 до 2}
-  !слово — исключить слово         !собак*
-  "фраза" — точное словосочетание
-  !"фраза" — исключить фразу
-  (a|b|c) — OR: одно из нескольких
-  !(a|b|c) — исключить группу
-
-Дополнительные атрибуты:
-  @имя(запрос) — фильтр только по указанному атрибуту
-  @бренд(apple)
-  @цвет("тёмно синий")
-  @вес({1-2})
-  @бренд(!apple !samsung (xiaomi|honor) обязательно)
-  @атрибут() — атрибут присутствует
-  @атрибут(!) — атрибут отсутствует
-  @атрибут(!запрос) — атрибут не содержит запрос
-
-Основные атрибуты (альтернатива отдельным полям):
-  @название(корм*)
-  @цена({500-1000})
-  @цена/ед.({100-300})
-  @рейтинг({4-5})
-  @отзывы({1000-100000})
-  @доставка(30.08) — доставка в эту дату
-  @доставка(30.08.2026) — дата с годом
-  @доставка({28.08-05.09}) — диапазон дат (текущий год)
-  @доставка({28.08-05.09.2026}) — диапазон с годом (год без {} — тоже работает)
-  @доставка({28.08-*}) / @доставка({*-05.09}) — открытая граница диапазона
-  @доставка({28.08-01.09}|{10.09-15.09}) — несколько диапазонов сразу (ИЛИ)
-  @доставка(!28.08-05.09.2026) — доставка НЕ в этом диапазоне
-  Для них работают () и (!): @цена() / @цена(!)
-  И отрицание значения: @цена(!1000)
-  • область атрибута всегда ограничена скобками: @имя(...)
-  • ! внутри скобок исключает значение только для этого атрибута
-  • @атрибут(...) можно сочетать с названием и другими атрибутами
-
-Гибкие фразы:
-  "({1-2} кг|{1000-2000} (гр|грамм|г))"
-  • внутри кавычек можно использовать (), | и диапазоны
-  • пробелы внутри гибкой фразы необязательны: «1 кг» и «1кг»
-  • ~ — явное обозначение необязательного пробела: «1~кг»
-  • диапазон проверяется по найденному числу, а не только по тексту
-
-Как работает поиск:
-  • отдельные условия разделяются пробелами
-  • все условия должны выполняться (AND)
-  • порядок слов не важен (кроме фраз)
-  • регистр не важен
-  • ! перед условием исключает совпадения
-
-Примеры:
-  farm* !собак*
-  к[ио]т {0.4...1.5}кг
-  "корм для кошек" !("сухой"|"гранулы")
-  iphone @бренд(hill*|royal*) @вес({0.4-1.5})
-  !"({1-2} кг|{1000-2000} (гр|грамм|г))"`;
-
-    hint.appendChild(searchTooltip);
-    let searchTooltipHideTimer = null;
-    const showSearchTooltip = () => {
-        if (searchTooltipHideTimer) { clearTimeout(searchTooltipHideTimer); searchTooltipHideTimer = null; }
-        searchTooltip.style.display = 'block';
-    };
-    const scheduleHideSearchTooltip = () => {
-        if (searchTooltipHideTimer) clearTimeout(searchTooltipHideTimer);
-        searchTooltipHideTimer = setTimeout(() => {
-            searchTooltip.style.display = 'none';
-            searchTooltipHideTimer = null;
-        }, 300);
-    };
-    hint.addEventListener('mouseenter', showSearchTooltip);
-    hint.addEventListener('mouseleave', scheduleHideSearchTooltip);
-    searchTooltip.addEventListener('mouseenter', showSearchTooltip);
-    searchTooltip.addEventListener('mouseleave', scheduleHideSearchTooltip);
+    });
 
     clearBtn.addEventListener('click', () => {
         searchInput.value = '';
@@ -1511,70 +521,7 @@ function createSortedProductsPopup(mode = 'asc') {
             renderSavedTiles();
         } else {
 
-    // Делегирование hover/click для карточек. Не создаём по 3 listener'а на каждую карточку.
-    function updateVisibleSelectionState() {
-        productsContainer.querySelectorAll('[data-tile-key]').forEach(wrap => {
-            const key = wrap.dataset.tileKey || '';
-            const selected = selectedKeys.has(key);
-            wrap.style.outline = selected ? '2px solid #2196F3' : '';
-            wrap.style.borderRadius = selected ? '8px' : '';
-            const checkbox = wrap.querySelector('[data-selection-checkbox]');
-            if (checkbox) {
-                checkbox.style.background = selected ? '#2196F3' : 'rgba(255,255,255,0.9)';
-                checkbox.style.borderColor = selected ? '#2196F3' : '#ccc';
-                checkbox.style.display = selected ? 'flex' : 'none';
-                checkbox.textContent = selected ? '✓' : '';
-            }
-        });
-    }
-
-    productsContainer.addEventListener('mouseover', e => {
-        const wrap = e.target.closest('[data-tile-key]');
-        if (!wrap || !productsContainer.contains(wrap)) return;
-        const from = e.relatedTarget;
-        if (from && wrap.contains(from)) return;
-        const checkbox = wrap.querySelector('[data-selection-checkbox]');
-        if (checkbox) checkbox.style.display = 'flex';
-    });
-    productsContainer.addEventListener('mouseout', e => {
-        const wrap = e.target.closest('[data-tile-key]');
-        if (!wrap || !productsContainer.contains(wrap)) return;
-        const to = e.relatedTarget;
-        if (to && wrap.contains(to)) return;
-        if (!selectedKeys.has(wrap.dataset.tileKey || '')) {
-            const checkbox = wrap.querySelector('[data-selection-checkbox]');
-            if (checkbox) checkbox.style.display = 'none';
-        }
-    });
-    productsContainer.addEventListener('click', e => {
-        const wrap = e.target.closest('[data-tile-key]');
-        if (!wrap || !productsContainer.contains(wrap)) return;
-        const checkbox = e.target.closest('[data-selection-checkbox]');
-        if (!e.ctrlKey && !e.shiftKey && !checkbox) return;
-
-        e.preventDefault();
-        e.stopPropagation();
-        const tileKey = wrap.dataset.tileKey || '';
-        if (!tileKey) return;
-
-        if (e.shiftKey && lastSelectedKey) {
-            const allKeys = currentTiles.map(tile => getTileKey(tile)).filter(Boolean);
-            const fromIdx = allKeys.indexOf(lastSelectedKey);
-            const toIdx = allKeys.indexOf(tileKey);
-            if (fromIdx !== -1 && toIdx !== -1) {
-                const lo = Math.min(fromIdx, toIdx);
-                const hi = Math.max(fromIdx, toIdx);
-                for (let i = lo; i <= hi; i++) selectedKeys.add(allKeys[i]);
-            }
-        } else {
-            if (selectedKeys.has(tileKey)) selectedKeys.delete(tileKey);
-            else selectedKeys.add(tileKey);
-            lastSelectedKey = tileKey;
-            lastSelectedIndex = currentTiles.findIndex(tile => getTileKey(tile) === tileKey);
-        }
-        updateSelectionPanel();
-        updateVisibleSelectionState();
-    });
+            // Обработчики выделения регистрируются один раз при создании панели.
 
     renderTiles(getFilteredAndSorted(''));
         }
@@ -1617,1047 +564,58 @@ function createSortedProductsPopup(mode = 'asc') {
     searchRow.appendChild(clearBtn);
     searchRow.appendChild(hint);
 
-    const typeRow = document.createElement('div');
-    typeRow.style.cssText = 'display:flex; gap:8px; align-items:center; flex-wrap:wrap;';
-
-    const typeLabel = document.createElement('span');
-    typeLabel.textContent = 'Показывать:';
-    typeLabel.style.cssText = 'font-size:13px; color:#666; white-space:nowrap;';
-
-    function createTypeBtn(key, label) {
-        const btn = document.createElement('button');
-        btn.dataset.key = key;
-        btn.dataset.label = label;
-        btn.dataset.typeBtn = key;
-        btn.textContent = label;
-        btn.style.cssText = `
-            padding: 5px 12px; border: 2px solid #4CAF50; border-radius: 20px;
-            cursor: pointer; font-size: 12px; font-weight: bold;
-            background: #4CAF50; color: white; transition: all 0.15s;
-        `;
-        btn.addEventListener('click', () => {
-            typeFilter[key] = !typeFilter[key];
-            btn.style.background = typeFilter[key] ? '#4CAF50' : 'transparent';
-            btn.style.color = typeFilter[key] ? 'white' : '#4CAF50';
-            applyFilters();
-        });
-        return btn;
-    }
-
-    // Строка фильтров по типу измерения товара
-    const toggleAllBtn = document.createElement('button');
-    toggleAllBtn.textContent = '✓ Все';
-    toggleAllBtn.style.cssText = `
-    padding: 5px 12px; border: 2px solid #888; border-radius: 20px;
-    cursor: pointer; font-size: 12px; font-weight: bold;
-    background: #888; color: white; transition: all 0.15s;
-`;
-    toggleAllBtn.title = 'Включить или выключить все фильтры по типу товара сразу';
-    toggleAllBtn.addEventListener('click', () => {
-        const allOn = Object.values(typeFilter).every(v => v);
-        const newState = !allOn;
-        for (const key of Object.keys(typeFilter)) {
-            typeFilter[key] = newState;
-        }
-        // Обновляем стили всех кнопок
-        for (const [category, btn] of Object.entries(typeBtns)) {
-            btn.style.background = typeFilter[category] ? '#4CAF50' : 'transparent';
-            btn.style.color = typeFilter[category] ? 'white' : '#4CAF50';
-        }
-        toggleAllBtn.textContent = newState ? '✓ Все' : '○ Все';
-        toggleAllBtn.style.background = newState ? '#888' : 'transparent';
-        toggleAllBtn.style.color = newState ? 'white' : '#888';
-        applyFilters();
+    const { attributeSuggestions, deliveryMax, deliveryMin, priceMax, priceMin, priceUnitMax, priceUnitMin, ratingMax, ratingMin, renderCounterLabel, reviewsMax, reviewsMin, syncFieldsFromSearch, typeBtns, typeFilter, updatePricePlaceholders, updatePriceUnitUI } = createFilterControls({
+        get _savedGroupCache() { return _savedGroupCache; },
+        set _savedGroupCache(value) { _savedGroupCache = value; },
+        get _searchGroupCache() { return _searchGroupCache; },
+        set _searchGroupCache(value) { _searchGroupCache = value; },
+        get applyFilters() { return applyFilters; },
+        get counter() { return counter; },
+        get currentMode() { return currentMode; },
+        set currentMode(value) { currentMode = value; },
+        get deliveryCalendarActionsWrap() { return deliveryCalendarActionsWrap; },
+        get extraControls() { return extraControls; },
+        get header() { return header; },
+        get priceFilterByUnit() { return priceFilterByUnit; },
+        set priceFilterByUnit(value) { priceFilterByUnit = value; },
+        get refreshAttributeAutocompleteUi() { return refreshAttributeAutocompleteUi; },
+        get scheduleApplyFilters() { return scheduleApplyFilters; },
+        get scheduleDeliveryCalendarRefresh() { return scheduleDeliveryCalendarRefresh; },
+        get searchInput() { return searchInput; },
+        get searchRow() { return searchRow; },
+        get sortBtns() { return sortBtns; },
+        get sortRow() { return sortRow; },
+        get topRow() { return topRow; },
+        get updateDeliveryCalendarButton() { return updateDeliveryCalendarButton; }
     });
-
-    typeRow.appendChild(typeLabel);
-    typeRow.appendChild(toggleAllBtn);
-
-    const typeFilter = {};
-    const typeBtns = {};
-
-    for (const [category, config] of Object.entries(UNITS)) {
-        typeFilter[category] = true;
-    }
-    typeFilter.none = true;
-
-    const typeTipMap = {
-        length: 'Товары, у которых в названии есть длина\n(см, м, мм…) — напр. «кабель 5м»',
-        volume: 'Товары, у которых в названии есть объём\n(мл, л, л…) — напр. «шампунь 500мл»',
-        weight: 'Товары, у которых в названии есть масса\n(г, кг…) — напр. «корм 2кг»',
-        pieces: 'Товары, у которых в названии есть штучность\n(шт, упак, таб…) — напр. «таблетки 30шт»',
-    };
-    for (const [category, config] of Object.entries(UNITS)) {
-        const btn = createTypeBtn(category, config.label);
-        if (typeTipMap[category]) btn.title = typeTipMap[category];
-        typeBtns[category] = btn;
-        typeRow.appendChild(btn);
-    }
-
-
-    const btnNone = createTypeBtn('none', '❓ Без величины');
-    btnNone.title = 'Товары, у которых в названии не найдена\nни одна единица измерения';
-    typeBtns.none = btnNone;
-    typeRow.appendChild(btnNone);
-
-    typeFilter.noPrice = true;
-    const btnNoPrice = createTypeBtn('noPrice', '🚫 Без цены');
-    btnNoPrice.title = 'Товары, у которых не удалось распознать цену\n(цена отсутствует или скрыта)';
-    typeBtns.noPrice = btnNoPrice;
-    typeRow.appendChild(btnNoPrice);
-
-    // Строка фильтра по цене (два независимых диапазона)
-    const priceRow = document.createElement('div');
-    priceRow.style.cssText = 'display:flex; gap:12px; align-items:center; flex-wrap:wrap;';
-
-    // ── Диапазон по полной цене ──
-    const priceLabel = document.createElement('span');
-    priceLabel.textContent = '💰 Цена:';
-    priceLabel.title = 'Фильтр по полной цене товара';
-    priceLabel.style.cssText = 'font-size:13px; color:#2196F3; font-weight:bold; white-space:nowrap;';
-
-    const priceMin = document.createElement('input');
-    priceMin.type = 'number';
-    priceMin.style.cssText = 'width:80px; padding:5px 8px; border:1px solid #90CAF9; border-radius:6px; font-size:13px;';
-
-    const priceSep = document.createElement('span');
-    priceSep.textContent = '—';
-    priceSep.style.cssText = 'color:#999;';
-
-    const priceMax = document.createElement('input');
-    priceMax.type = 'number';
-    priceMax.style.cssText = 'width:80px; padding:5px 8px; border:1px solid #90CAF9; border-radius:6px; font-size:13px;';
-
-    // ── Разделитель ──
-    const priceDivider = document.createElement('span');
-    priceDivider.textContent = '│';
-    priceDivider.style.cssText = 'color:#ddd; font-size:16px;';
-
-    // ── Диапазон по цене/величине ──
-    const priceUnitLabel = document.createElement('span');
-    priceUnitLabel.textContent = '⚖️ Цена/ед.:';
-    priceUnitLabel.title = 'Фильтр по цене за единицу (г/мл/шт…)';
-    priceUnitLabel.style.cssText = 'font-size:13px; color:#4CAF50; font-weight:bold; white-space:nowrap;';
-
-    const priceUnitMin = document.createElement('input');
-    priceUnitMin.type = 'number';
-    priceUnitMin.style.cssText = 'width:80px; padding:5px 8px; border:1px solid #A5D6A7; border-radius:6px; font-size:13px;';
-
-    const priceUnitSep = document.createElement('span');
-    priceUnitSep.textContent = '—';
-    priceUnitSep.style.cssText = 'color:#999;';
-
-    const priceUnitMax = document.createElement('input');
-    priceUnitMax.type = 'number';
-    priceUnitMax.style.cssText = 'width:80px; padding:5px 8px; border:1px solid #A5D6A7; border-radius:6px; font-size:13px;';
-
-    const unitPrioritySelect = document.createElement('select');
-    unitPrioritySelect.title = 'По какой величине сравнивать цену/ед. при фильтрации и сортировке';
-    unitPrioritySelect.style.cssText = 'padding:5px 7px; border:1px solid #A5D6A7; border-radius:6px; font-size:12px; background:#fff;';
-    function unitPriorityOptionLabel(category) {
-        if (category === 'auto') return 'Авто';
-        const chosen = getDisplayUnitForCategory(category);
-        return chosen ? `${getCategoryDisplayName(category)} · ₽/${chosen.unit}` : getCategoryDisplayName(category);
-    }
-    function renderUnitPriorityOptions() {
-        const prev = unitPrioritySelect.value;
-        unitPrioritySelect.innerHTML = '';
-        ['auto', ...getCategoriesByPriority()].forEach(value => {
-            const option = document.createElement('option');
-            option.value = value;
-            option.textContent = unitPriorityOptionLabel(value);
-            unitPrioritySelect.appendChild(option);
-        });
-        if (prev) unitPrioritySelect.value = prev;
-    }
-    renderUnitPriorityOptions();
-
-    priceFilterByUnit = false; // оставляем переменную для совместимости, но она больше не используется
-
-    chrome.storage.local.get(['unitPricePriority'], d => {
-        unitPricePriority = d.unitPricePriority || 'auto';
-        unitPrioritySelect.value = unitPricePriority;
-        updatePriceUnitUI();
+    const { selectionPanel, updateSelectionPanel } = createSearchSelection({
+        get bottomUiRoot() { return bottomUiRoot; },
+        get cardsHost() { return cardsHost; },
+        get createProgressBar() { return createProgressBar; },
+        get currentTiles() { return currentTiles; },
+        get header() { return header; },
+        get lastSelectedIndex() { return lastSelectedIndex; },
+        set lastSelectedIndex(value) { lastSelectedIndex = value; },
+        get lastSelectedKey() { return lastSelectedKey; },
+        set lastSelectedKey(value) { lastSelectedKey = value; },
+        get productsContainer() { return productsContainer; },
+        get renderTiles() { return renderTiles; },
+        get selectedKeys() { return selectedKeys; },
+        get showNotification() { return showNotification; },
+        get uiRoot() { return uiRoot; },
+        get updateVisibleSelectionState() { return updateVisibleSelectionState; }
     });
-    unitPrioritySelect.addEventListener('change', () => {
-        unitPricePriority = unitPrioritySelect.value || 'auto';
-        chrome.storage.local.set({ unitPricePriority });
-        updatePriceUnitUI();
-        scheduleApplyFilters();
-    });
-
-    function updatePriceUnitUI() {
-        renderUnitPriorityOptions();
-        const label = getUnitPricePriorityLabel();
-        priceUnitLabel.textContent = `⚖️ Цена/ед. (${label}):`;
-        priceUnitLabel.title = (unitPricePriority === 'auto'
-            ? 'Авто: приоритет Вес → Объём → Штуки → Длина. Если выбранная величина отсутствует, товар не участвует в сравнении по цене/ед.'
-            : `Фильтр и сортировка только по выбранной величине: ${label}`)
-            + ' Знаков после запятой в настройках единиц влияет только на отображение, точность фильтра не меняет.';
-        updatePricePlaceholders([...seenTiles.values()]);
-        scheduleDeliveryCalendarRefresh(true);
-    }
-
-    priceRow.appendChild(priceLabel);
-    priceRow.appendChild(priceMin);
-    priceRow.appendChild(priceSep);
-    priceRow.appendChild(priceMax);
-    priceRow.appendChild(priceDivider);
-    priceRow.appendChild(priceUnitLabel);
-    priceRow.appendChild(priceUnitMin);
-    priceRow.appendChild(priceUnitSep);
-    priceRow.appendChild(priceUnitMax);
-    priceRow.appendChild(unitPrioritySelect);
-
-    // Компактный вид селектора величины, когда он временно живёт внутри
-    // счётчика (см. renderCounterLabel) — тот же элемент, просто другое место в DOM.
-
-    // Обновляет текст счётчика карточек. Когда активна сортировка по
-    // «цена/ед.» (режим 'per-gram*'), сам селектор приоритета величины
-    // (⚖️ Авто/Вес/Объём/…) переносится внутрь счётчика вместо статичной
-    // подписи — это ОДИН И ТОТ ЖЕ элемент (просто перемещается по DOM),
-    // поэтому его обработчик 'change' и текущее значение не теряются.
-    // В остальных режимах селектор возвращается на своё место в строке
-    // фильтра цены/ед.
-    function renderCounterLabel(count, total, mode, arrow) {
-        counter.replaceChildren();
-        if (String(mode).startsWith('per-gram')) {
-            counter.appendChild(document.createTextNode(`${count}/${total} шт. · ⚖️ `));
-            unitPrioritySelect.style.verticalAlign = 'middle';
-            unitPrioritySelect.style.margin = '0 2px';
-            counter.appendChild(unitPrioritySelect);
-            counter.appendChild(document.createTextNode(` ${arrow}`));
-        } else {
-            if (unitPrioritySelect.parentElement !== priceRow) {
-                priceRow.appendChild(unitPrioritySelect);
-            }
-            const label = getSortModeLabel(mode);
-            counter.appendChild(document.createTextNode(`${count}/${total} шт. · ${label} ${arrow}`));
-        }
-        counter.appendChild(document.createTextNode(' '));
-        counter.appendChild(deliveryCalendarActionsWrap);
-        updateDeliveryCalendarButton();
-    }
-
-    // ── Вторая строка фильтров: рейтинг и отзывы ──
-    const rangeRow2 = document.createElement('div');
-    rangeRow2.style.cssText = 'display:flex; gap:12px; align-items:center; flex-wrap:wrap;';
-
-    const ratingLabel = document.createElement('span');
-    ratingLabel.textContent = '⭐ Рейтинг:';
-    ratingLabel.title = 'Фильтр по рейтингу товара';
-    ratingLabel.style.cssText = 'font-size:13px; color:#FF9800; font-weight:bold; white-space:nowrap;';
-
-    const ratingMin = document.createElement('input');
-    ratingMin.type = 'number';
-    ratingMin.step = '0.1';
-    ratingMin.style.cssText = 'width:70px; padding:5px 8px; border:1px solid #FFCC80; border-radius:6px; font-size:13px;';
-
-    const ratingSep = document.createElement('span');
-    ratingSep.textContent = '—';
-    ratingSep.style.cssText = 'color:#999;';
-
-    const ratingMax = document.createElement('input');
-    ratingMax.type = 'number';
-    ratingMax.step = '0.1';
-    ratingMax.style.cssText = 'width:70px; padding:5px 8px; border:1px solid #FFCC80; border-radius:6px; font-size:13px;';
-
-    const rangeDivider2 = document.createElement('span');
-    rangeDivider2.textContent = '│';
-    rangeDivider2.style.cssText = 'color:#ddd; font-size:16px;';
-
-    const reviewsLabel = document.createElement('span');
-    reviewsLabel.textContent = '💬 Отзывы:';
-    reviewsLabel.title = 'Фильтр по количеству отзывов';
-    reviewsLabel.style.cssText = 'font-size:13px; color:#7E57C2; font-weight:bold; white-space:nowrap;';
-
-    const reviewsMin = document.createElement('input');
-    reviewsMin.type = 'number';
-    reviewsMin.style.cssText = 'width:70px; padding:5px 8px; border:1px solid #D1C4E9; border-radius:6px; font-size:13px;';
-
-    const reviewsSep = document.createElement('span');
-    reviewsSep.textContent = '—';
-    reviewsSep.style.cssText = 'color:#999;';
-
-    const reviewsMax = document.createElement('input');
-    reviewsMax.type = 'number';
-    reviewsMax.style.cssText = 'width:70px; padding:5px 8px; border:1px solid #D1C4E9; border-radius:6px; font-size:13px;';
-
-    const rangeDelivery2 = document.createElement('span');
-    rangeDelivery2.textContent = '│';
-    rangeDelivery2.style.cssText = 'color:#ddd; font-size:16px;';
-
-    const deliveryLabel = document.createElement('span');
-    deliveryLabel.textContent = '🚚 Доставка:';
-    deliveryLabel.title = 'Фильтр по дате доставки';
-    deliveryLabel.style.cssText = 'font-size:13px; color:#00af90; font-weight:bold; white-space:nowrap;';
-
-    const deliveryMin = document.createElement('input');
-    deliveryMin.type = 'text';
-    // deliveryMin.type = 'date';
-    deliveryMin.style.cssText = 'width:120px; padding:5px 8px; border:1px solid #D1C4E9; border-radius:6px; font-size:13px;';
-    // При фокусе превращаем в календарь
-    deliveryMin.addEventListener('focus', () => {
-        deliveryMin.type = 'date';
-    });
-    // При потере фокуса возвращаем текст, только если поле осталось пустым
-    deliveryMin.addEventListener('blur', () => {
-        if (!deliveryMin.value) {
-            deliveryMin.type = 'text';
-        }
-    });
-
-    const deliverySep = document.createElement('span');
-    deliverySep.textContent = '—';
-    deliverySep.style.cssText = 'color:#999;';
-
-    const deliveryMax = document.createElement('input');
-    deliveryMax.type = 'text'; // Начинаем как текст
-    // deliveryMax.type = 'date';
-    deliveryMax.style.cssText = 'width:120px; padding:5px 8px; border:1px solid #D1C4E9; border-radius:6px; font-size:13px;';
-    // При фокусе превращаем в календарь
-    deliveryMax.addEventListener('focus', () => {
-        deliveryMax.type = 'date';
-    });
-    // При потере фокуса возвращаем текст, только если поле осталось пустым
-    deliveryMax.addEventListener('blur', () => {
-        if (!deliveryMax.value) {
-            deliveryMax.type = 'text';
-        }
-    });
-
-    rangeRow2.appendChild(ratingLabel);
-    rangeRow2.appendChild(ratingMin);
-    rangeRow2.appendChild(ratingSep);
-    rangeRow2.appendChild(ratingMax);
-    rangeRow2.appendChild(rangeDivider2);
-    rangeRow2.appendChild(reviewsLabel);
-    rangeRow2.appendChild(reviewsMin);
-    rangeRow2.appendChild(reviewsSep);
-    rangeRow2.appendChild(reviewsMax);
-    rangeRow2.appendChild(rangeDelivery2);
-    rangeRow2.appendChild(deliveryLabel);
-    rangeRow2.appendChild(deliveryMin);
-    rangeRow2.appendChild(deliverySep);
-    rangeRow2.appendChild(deliveryMax);
-
-    // ── Связь «поисковая строка ↔ поля фильтра» ────────────────────────────────
-    // Поля и DSL используют один источник смысла. Простые диапазоны синхронизируются
-    // в обе стороны, а сложные выражения (несколько диапазонов, OR, вложенные группы)
-    // оставляем в поисковой строке, чтобы не потерять её более богатый синтаксис.
-    let linkedFiltersEnabled = true;
-    let linkedFiltersSyncing = false;
-    let linkedFiltersStatus = null;
-
-    chrome.storage.local.get(['linkedFiltersEnabled'], d => {
-        linkedFiltersEnabled = d.linkedFiltersEnabled !== false;
-        if (linkedFiltersStatus) updateLinkedFiltersStatus();
-    });
-
-    function getLinkedFieldInputSet(field) {
-        return {
-            price: [priceMin, priceMax],
-            perunit: [priceUnitMin, priceUnitMax],
-            rating: [ratingMin, ratingMax],
-            reviews: [reviewsMin, reviewsMax],
-            delivery: [deliveryMin, deliveryMax]
-        }[field] || null;
-    }
-
-    function clearLinkedField(field) {
-        const pair = getLinkedFieldInputSet(field);
-        if (pair) pair.forEach(i => { i.value = ''; });
-    }
-
-    function formatLinkedNumeric(v) {
-        return String(v).replace(',', '.').trim();
-    }
-
-    function formatLinkedDateInput(v) {
-        const s = String(v || '').trim();
-        if (!s) return '';
-        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-            const [y,m,d] = s.split('-');
-            return `${d}.${m}.${y}`;
-        }
-        return s;
-    }
-
-    function parseLinkedRangeToken(token) {
-        if (!token || token.type !== 'range') return null;
-        return { min: token.min, max: token.max };
-    }
-
-    function extractLinkedSearchRanges(query) {
-        const tokens = parseSearchQuery(stripSortRulesFromQuery(query || ''));
-        const out = { price: [], perunit: [], rating: [], reviews: [], delivery: [] };
-        let incompatible = false;
-        const walk = arr => {
-            for (const token of arr) {
-                if (token.type === 'field') {
-                    const field = normalizePrimarySearchFieldName(token.name);
-                    if (!field || field === 'title' || token.exclude || token.presence) { incompatible = true; continue; }
-                    if (field === 'delivery' && token.dateQuery) {
-                        if (token.dateQuery.exclude || !token.dateQuery.ranges?.length) { incompatible = true; continue; }
-                        for (const r of token.dateQuery.ranges) out.delivery.push({min:r.minTs,max:r.maxTs});
-                        continue;
-                    }
-                    // Новая форма числовых атрибутов хранится в token.numericQuery:
-                    // @цена/ед.(0.01-1 2 3.1-3.2) / через ';'. Старую форму
-                    // с фигурными скобками также поддерживаем через innerTokens.
-                    if (token.numericQuery?.items?.length) {
-                        const items = token.numericQuery.items;
-                        if (items.some(r => r.exclude)) { incompatible = true; continue; }
-                        items.forEach(r => out[field].push({min:r.min,max:r.max}));
-                        continue;
-                    }
-                    if (!token.innerTokens?.length) { incompatible = true; continue; }
-                    const ranges = token.innerTokens.filter(t => t.type === 'range');
-                    if (ranges.length !== token.innerTokens.length || !ranges.length) { incompatible = true; continue; }
-                    ranges.forEach(r => out[field].push({min:r.min,max:r.max}));
-                } else if (token.type === 'or-group' || token.type === 'query-group') {
-                    incompatible = true;
-                } else {
-                    incompatible = true;
-                }
-            }
-        };
-        walk(tokens);
-        return { out, incompatible };
-    }
-
-    function updateLinkedFiltersStatus(text = null) {
-        if (!linkedFiltersStatus) return;
-        if (text) { linkedFiltersStatus.textContent = text; linkedFiltersStatus.style.color = '#b26a00'; return; }
-        linkedFiltersStatus.textContent = linkedFiltersEnabled ? '↔ Связано' : '↔ Связь выкл.';
-        linkedFiltersStatus.style.color = linkedFiltersEnabled ? '#2e7d32' : '#999';
-    }
-
-    function syncFieldsFromSearch() {
-        if (!linkedFiltersEnabled || linkedFiltersSyncing) return;
-        const query = searchInput.value.trim();
-        if (!query) {
-            linkedFiltersSyncing = true;
-            ['price','perunit','rating','reviews','delivery'].forEach(clearLinkedField);
-            linkedFiltersSyncing = false;
-            updateLinkedFiltersStatus();
-            return;
-        }
-        const parsed = extractLinkedSearchRanges(query);
-        if (parsed.incompatible) {
-            updateLinkedFiltersStatus('↔ Сложный запрос — поля не меняют его');
-            return;
-        }
-        linkedFiltersSyncing = true;
-        ['price','perunit','rating','reviews','delivery'].forEach(clearLinkedField);
-        const setPair = (field, r) => {
-            const pair=getLinkedFieldInputSet(field); if(!pair || !r) return;
-            if(field==='delivery') {
-                pair[0].value = formatDateInputFromTs(r.min);
-                pair[1].value = formatDateInputFromTs(r.max);
-            } else {
-                pair[0].value = formatLinkedNumeric(r.min);
-                pair[1].value = formatLinkedNumeric(r.max);
-            }
-        };
-        for (const field of Object.keys(parsed.out)) {
-            const ranges=parsed.out[field];
-            if (ranges.length === 1) setPair(field, ranges[0]);
-            else if (ranges.length > 1) { linkedFiltersSyncing=false; updateLinkedFiltersStatus(`↔ ${field === 'delivery' ? 'Доставка' : field}: несколько диапазонов — управляются из строки поиска`); return; }
-        }
-        linkedFiltersSyncing = false;
-        updateLinkedFiltersStatus();
-    }
-
-    function formatDateInputFromTs(ts) {
-        const d = new Date(ts);
-        if (!Number.isFinite(d.getTime())) return '';
-        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    }
-
-    function isSimpleLinkedFieldClauseName(name) {
-        const f=normalizePrimarySearchFieldName(name);
-        return ['price','perunit','rating','reviews','delivery'].includes(f);
-    }
-
-    function fieldClauseFromInputs(field) {
-        const pair=getLinkedFieldInputSet(field); if(!pair) return null;
-        const a=String(pair[0].value||'').trim(), b=String(pair[1].value||'').trim();
-        if(!a && !b) return null;
-        if(!a || !b) return { unsupported:true };
-        if(field==='delivery') {
-            const da=parseStrictDate(a,'start'), db=parseStrictDate(b,'end');
-            if(!Number.isFinite(da)||!Number.isFinite(db)) return {unsupported:true};
-            const d1=new Date(da), d2=new Date(db);
-            const f=d=>`${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}`;
-            return `@доставка({${f(d1)}-${f(d2)}})`;
-        }
-        const min=formatLinkedNumeric(a), max=formatLinkedNumeric(b);
-        if(!/^[-+]?\d+(?:\.\d+)?$/.test(min)||!/^[-+]?\d+(?:\.\d+)?$/.test(max)) return {unsupported:true};
-        const names={price:'цена',perunit:'цена/ед.',rating:'рейтинг',reviews:'отзывы'};
-        return `@${names[field]}({${min}-${max}})`;
-    }
-
-    function syncSearchFromFields() {
-        if (!linkedFiltersEnabled || linkedFiltersSyncing) return;
-        const clauses=[];
-        for (const field of ['price','perunit','rating','reviews','delivery']) {
-            const clause=fieldClauseFromInputs(field);
-            if (clause?.unsupported) { updateLinkedFiltersStatus('↔ Заполните обе границы диапазона'); return; }
-            if (clause) clauses.push(clause);
-        }
-        let query=searchInput.value.trim();
-        // Удаляем только простые primary-field clauses. Остальной пользовательский
-        // запрос (например, «корм*») сохраняем. Сложные field-выражения не трогаем.
-        const simpleClauseRe=/@([\p{L}\p{N}_\/.-]+)\((\{[^(){}]+\})\)/giu;
-        query=query.replace(simpleClauseRe, (full,name)=> isSimpleLinkedFieldClauseName(name) ? '' : full).replace(/\s{2,}/g,' ').trim();
-        if (clauses.length) query=query ? `${query} ${clauses.join(' ')}` : clauses.join(' ');
-        linkedFiltersSyncing=true;
-        searchInput.value=query;
-        linkedFiltersSyncing=false;
-        updateLinkedFiltersStatus();
-        searchInput.dispatchEvent(new Event('input',{bubbles:true}));
-    }
-
-    const linkedToggleWrap=document.createElement('label');
-    linkedToggleWrap.style.cssText='display:flex;align-items:center;gap:4px;font-size:10px;color:#777;white-space:nowrap;margin-left:4px;';
-    const linkedToggle=document.createElement('input'); linkedToggle.type='checkbox'; linkedToggle.checked=linkedFiltersEnabled;
-    linkedToggle.title='Синхронизировать простые диапазоны между поисковой строкой и полями';
-    linkedToggle.addEventListener('change',()=>{linkedFiltersEnabled=linkedToggle.checked;chrome.storage.local.set({linkedFiltersEnabled});updateLinkedFiltersStatus();if(linkedFiltersEnabled) syncFieldsFromSearch();});
-    linkedToggleWrap.append(linkedToggle,document.createTextNode('↔ Поиск/поля'));
-    linkedFiltersStatus=document.createElement('span');
-    linkedFiltersStatus.style.cssText='font-size:10px;color:#2e7d32;white-space:nowrap;';
-    updateLinkedFiltersStatus();
-    rangeRow2.appendChild(linkedToggleWrap);
-    rangeRow2.appendChild(linkedFiltersStatus);
-
-    [priceMin, priceMax, priceUnitMin, priceUnitMax, ratingMin, ratingMax, reviewsMin, reviewsMax, deliveryMin, deliveryMax].forEach(input => {
-        input.addEventListener('input', () => { syncSearchFromFields(); scheduleApplyFilters(); });
-    });
-
-    function updatePricePlaceholders(tiles) {
-        if (tiles.length === 0) return;
-        // Цены
-        const priceVals = tiles.map(t => getPrice(t)).filter(v => v < 99999999);
-        if (priceVals.length > 0) {
-            priceMin.placeholder = Math.min(...priceVals).toFixed(0);
-            priceMax.placeholder = Math.max(...priceVals).toFixed(0);
-        }
-        // Цены/ед.
-        const unitVals = tiles.map(t => getPricePerUnit(t)?.value).filter(v => v != null && Number.isFinite(v));
-        if (unitVals.length > 0) {
-            const d = getUnitPriceDecimalsForPriority();
-            priceUnitMin.placeholder = Math.min(...unitVals).toFixed(d);
-            priceUnitMax.placeholder = Math.max(...unitVals).toFixed(d);
-        } else {
-            priceUnitMin.placeholder = '';
-            priceUnitMax.placeholder = '';
-        }
-        // Рейтинг
-        const ratingVals = tiles.map(t => getRating(t)).filter(v => v != null);
-        if (ratingVals.length > 0) {
-            ratingMin.placeholder = Math.min(...ratingVals).toString();
-            ratingMax.placeholder = Math.max(...ratingVals).toString();
-        }
-        // Отзывы
-        const reviewsVals = tiles.map(t => getReviewsCount(t)).filter(v => v != null);
-        if (reviewsVals.length > 0) {
-            reviewsMin.placeholder = Math.min(...reviewsVals).toString();
-            reviewsMax.placeholder = Math.max(...reviewsVals).toString();
-        }
-        // Дата доставки
-        const deliveryVals = tiles.map(t => getDeliveryDate(t)).filter(v => v != null);
-        if (deliveryVals.length > 0) {
-            deliveryMin.placeholder = formatDateToString(Math.min(...deliveryVals));
-            deliveryMax.placeholder = formatDateToString(Math.max(...deliveryVals));
-        }
-
-        // ── Кэш подсказок для автодополнения @атрибутов в поисковой строке ──
-        // Считается один раз здесь (там же, где и остальные плейсхолдеры —
-        // то есть при обновлении набора карточек), а не на каждое нажатие
-        // клавиши в поле поиска. Строка поиска только читает готовый кэш.
-        rebuildAttributeSuggestCache(tiles, { priceVals, unitVals, ratingVals, reviewsVals, deliveryVals });
-    }
-
-    // Список «основных» атрибутов, доступных через @имя(...) — их можно
-    // ввести и в отдельные поля фильтра, но эти алиасы тоже нужно предлагать.
-    const PRIMARY_ATTR_HINTS = [
-        { name: 'название', kind: 'primary-text', staticHint: 'обычный текстовый поиск, например @название(корм*)' },
-        { name: 'цена', kind: 'primary-number', vals: 'priceVals', unit: '₽' },
-        { name: 'цена/ед.', kind: 'primary-number', vals: 'unitVals' },
-        { name: 'рейтинг', kind: 'primary-number', vals: 'ratingVals' },
-        { name: 'отзывы', kind: 'primary-number', vals: 'reviewsVals' },
-        { name: 'доставка', kind: 'primary-date', vals: 'deliveryVals' },
-    ];
-
-    let attributeSuggestCache = [];
-
-    function rebuildAttributeSuggestCache(tiles, primaryVals) {
-        const entries = [];
-
-        for (const def of PRIMARY_ATTR_HINTS) {
-            if (def.kind === 'primary-number') {
-                const vals = primaryVals[def.vals] || [];
-                if (!vals.length) { entries.push({ name: def.name, kind: def.kind, hint: null }); continue; }
-                const d = def.name === 'цена/ед.' ? getUnitPriceDecimalsForPriority() : (def.name === 'рейтинг' ? undefined : 0);
-                const min = Math.min(...vals), max = Math.max(...vals);
-                const fmt = v => d != null ? v.toFixed(d) : String(v);
-                entries.push({ name: def.name, kind: def.kind, hint: `${fmt(min)} – ${fmt(max)}` });
-            } else if (def.kind === 'primary-date') {
-                const vals = primaryVals[def.vals] || [];
-                if (!vals.length) { entries.push({ name: def.name, kind: def.kind, hint: null }); continue; }
-                entries.push({ name: def.name, kind: def.kind, hint: `${formatDateToString(Math.min(...vals))} – ${formatDateToString(Math.max(...vals))}` });
-            } else {
-                entries.push({ name: def.name, kind: def.kind, hint: def.staticHint || null, static: true });
-            }
-        }
-
-        // Настраиваемые (дополнительные) атрибуты — те же данные, что уже
-        // используются панелью «Доп. атрибуты и величины» ниже.
-        let extraDefs = [];
-        try { extraDefs = getExtraDefinitions(tiles); } catch { extraDefs = []; }
-        for (const def of extraDefs) {
-            const name = def.name;
-            if (!name) continue;
-            let hint = null;
-            if (def.kind === 'quantity') {
-                const nums = def.values.map(parseExtraNumber).filter(v => v != null);
-                if (nums.length) {
-                    const min = Math.min(...nums), max = Math.max(...nums);
-                    hint = `${min}${def.unit ? ' ' + def.unit : ''} – ${max}${def.unit ? ' ' + def.unit : ''}`;
-                }
-            } else {
-                const freq = new Map();
-                for (const raw of def.values) {
-                    for (const v of String(raw).split(' | ').map(s => s.trim()).filter(Boolean)) {
-                        freq.set(v, (freq.get(v) || 0) + 1);
-                    }
-                }
-                const top = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([v]) => v);
-                if (top.length) hint = top.join(', ') + (freq.size > top.length ? ', …' : '');
-            }
-            entries.push({ name, kind: def.kind === 'quantity' ? 'extra-quantity' : 'extra-text', hint });
-        }
-
-        attributeSuggestCache = entries;
-        refreshAttributeAutocompleteUi();
-    }
-
-    // ── Кнопка «Сбросить всё» ──
-    const resetFiltersBtn = document.createElement('button');
-    resetFiltersBtn.textContent = '↺ Сбросить';
-    resetFiltersBtn.title = 'Сбросить все фильтры и сортировку к значениям по умолчанию:\n• Сортировка: Цена ↑\n• Все типы товаров включены\n• Диапазон цены очищен\n• Поисковая строка очищена\n• Режим: по цене';
-    resetFiltersBtn.style.cssText = `
-        padding: 4px 10px; border: 1px solid #bbb; border-radius: 14px;
-        cursor: pointer; font-size: 11px; font-weight: 500;
-        background: #f5f5f5; color: #666; transition: all 0.15s;
-        margin-left: auto; white-space: nowrap; flex-shrink: 0;
-    `;
-    resetFiltersBtn.addEventListener('mouseenter', () => {
-        resetFiltersBtn.style.background = '#e0e0e0';
-        resetFiltersBtn.style.color = '#333';
-        resetFiltersBtn.style.borderColor = '#999';
-    });
-    resetFiltersBtn.addEventListener('mouseleave', () => {
-        resetFiltersBtn.style.background = '#f5f5f5';
-        resetFiltersBtn.style.color = '#666';
-        resetFiltersBtn.style.borderColor = '#bbb';
-    });
-    resetFiltersBtn.addEventListener('click', () => {
-        // Сброс сортировки
-        currentMode = 'asc';
-        sortBtns.forEach(([bm, b]) => {
-            b.style.background = bm === 'asc' ? '#2196F3' : 'transparent';
-            b.style.color = bm === 'asc' ? 'white' : '#2196F3';
-        });
-        // Сброс фильтров типов
-        for (const key of Object.keys(typeFilter)) typeFilter[key] = true;
-        for (const [cat, btn] of Object.entries(typeBtns)) {
-            btn.style.background = '#4CAF50';
-            btn.style.color = 'white';
-        }
-        toggleAllBtn.textContent = '✓ Все';
-        toggleAllBtn.style.background = '#888';
-        toggleAllBtn.style.color = 'white';
-        // Сброс диапазонов цены
-        priceMin.value = '';
-        priceMax.value = '';
-        priceUnitMin.value = '';
-        priceUnitMax.value = '';
-        unitPricePriority = 'auto';
-        unitPrioritySelect.value = 'auto';
-        chrome.storage.local.set({ unitPricePriority: 'auto' });
-        updatePriceUnitUI();
-        ratingMin.value = '';
-        ratingMax.value = '';
-        reviewsMin.value = '';
-        reviewsMax.value = '';
-        deliveryMin.value = '';
-        deliveryMax.value = '';
-        // Сброс строки поиска
-        searchInput.value = '';
-        // Сброс кэша групп
-        _searchGroupCache = null;
-        _savedGroupCache = null;
-        applyFilters();
-    });
-    sortRow.appendChild(resetFiltersBtn);
-
-    // Компактный общий сворачиваемый контейнер для всех быстрых фильтров и сортировки.
-    const filtersPanel = document.createElement('div');
-    filtersPanel.style.cssText = 'display:flex; flex-direction:column; gap:8px; padding:7px 9px; border:1px solid #d8dee6; border-radius:8px; background:#fbfcfd;';
-    const filtersToggle = document.createElement('div');
-    filtersToggle.style.cssText = 'font-size:12px; font-weight:700; color:#546e7a; cursor:pointer; user-select:none; min-height:20px; line-height:20px;';
-    const filtersBody = document.createElement('div');
-    filtersBody.style.cssText = 'display:none; flex-direction:column; gap:8px;';
-    let filtersPanelOpen = false;
-    function setFiltersPanelOpen(open) {
-        filtersPanelOpen = !!open;
-        filtersToggle.textContent = (filtersPanelOpen ? '▼' : '▶') + ' ⚙ Фильтры и сортировка';
-        filtersBody.style.display = filtersPanelOpen ? 'flex' : 'none';
-    }
-    filtersToggle.addEventListener('click', () => setFiltersPanelOpen(!filtersPanelOpen));
-    filtersBody.appendChild(sortRow);
-    filtersBody.appendChild(typeRow);
-    filtersBody.appendChild(priceRow);
-    filtersBody.appendChild(rangeRow2);
-    filtersBody.appendChild(extraControls);
-    filtersPanel.appendChild(filtersToggle);
-    filtersPanel.appendChild(filtersBody);
-    setFiltersPanelOpen(false);
-
-    header.appendChild(topRow);
-    header.appendChild(searchRow);
-    header.appendChild(filtersPanel);
-
-    // ─── Панель выделения ──────────────────────────────────────────────────────────
-    const selectionPanel = document.createElement('div');
-    selectionPanel.style.cssText = `
-    display: flex; padding: 10px 20px;
-    background: #e3f2fd; border-top: 1px solid #90caf9;
-    flex-shrink: 0; gap: 10px; align-items: center;
-    flex-wrap: wrap;
-`;
-
-    const selectionCounter = document.createElement('span');
-    selectionCounter.style.cssText = 'font-size:13px; color:#1565c0; font-weight:bold;';
-
-    const selectAllBtn = document.createElement('button');
-    selectAllBtn.textContent = '☑ Выбрать все';
-    selectAllBtn.style.cssText = 'padding:6px 12px; background:#2196F3; color:white; border:none; border-radius:6px; cursor:pointer; font-size:12px;';
-
-    const deselectBtn = document.createElement('button');
-    deselectBtn.textContent = '✕ Снять выделение';
-    deselectBtn.style.cssText = 'padding:6px 12px; background:transparent; color:#666; border:1px solid #ccc; border-radius:6px; cursor:pointer; font-size:12px;';
-
-    const saveSelectedBtn = document.createElement('button');
-    saveSelectedBtn.textContent = '🔖 Сохранить выбранные';
-    saveSelectedBtn.style.cssText = 'padding:6px 12px; background:#4CAF50; color:white; border:none; border-radius:6px; cursor:pointer; font-size:12px;';
-
-    const invertBtn = document.createElement('button');
-    invertBtn.textContent = '⇄ Инвертировать';
-    invertBtn.style.cssText = 'padding:6px 12px; background:transparent; color:#666; border:1px solid #ccc; border-radius:6px; cursor:pointer; font-size:12px;';
-    invertBtn.addEventListener('click', () => {
-        currentTiles.forEach(tile => {
-            const k = getTileKey(tile);
-            if (!k) return;
-            if (selectedKeys.has(k)) selectedKeys.delete(k);
-            else selectedKeys.add(k);
-        });
-        updateSelectionPanel();
-        updateVisibleSelectionState();
-    });
-
-    selectionPanel.appendChild(selectionCounter);
-    selectionPanel.appendChild(selectAllBtn);
-    selectionPanel.appendChild(deselectBtn);
-    selectionPanel.appendChild(invertBtn);
-    selectionPanel.appendChild(saveSelectedBtn);
-
-    function updateSelectionPanel() {
-        selectionCounter.textContent = selectedKeys.size > 0 ? `Выбрано: ${selectedKeys.size}` : '';
-    }
-
-    selectAllBtn.addEventListener('click', () => {
-        currentTiles.forEach(tile => {
-            const k = getTileKey(tile);
-            if (k) selectedKeys.add(k);
-        });
-        lastSelectedIndex = -1; lastSelectedKey = null;
-        updateSelectionPanel();
-        updateVisibleSelectionState();
-    });
-
-    deselectBtn.addEventListener('click', () => {
-        selectedKeys.clear();
-        lastSelectedIndex = -1; lastSelectedKey = null;
-        updateSelectionPanel();
-        updateVisibleSelectionState();
-    });
-
-    saveSelectedBtn.addEventListener('click', async () => {
-        const tilesToSave = currentTiles
-            .filter(tile => selectedKeys.has(getTileKey(tile)));
-        if (tilesToSave.length === 0) return;
-
-        // показываем диалог выбора папок
-        const existingFolders = getAllFoldersGlobal ? await getAllFoldersGlobal() : [];
-        showSaveFolderDialog(saveSelectedBtn, existingFolders, async (chosenFolders) => {
-            const total = tilesToSave.length;
-            const progress = total > 3 ? createProgressBar(
-                '⏳ Подготовка: 0 / ' + total + ' карточек...'
-            ) : null;
-
-            // Собираем HTML карточек с прогрессом
-            const toSave = [];
-            for (let i = 0; i < tilesToSave.length; i++) {
-                const tile = tilesToSave[i];
-                const key = getTileKey(tile);
-                const title = getTileTitle(tile);
-                const price = getPrice(tile);
-                const rating = getRating(tile);
-                const reviews = getReviewsCount(tile);
-                const delivery = getDeliveryDate(tile);
-                const html = await buildNormalizedTileHtml(tile);
-                toSave.push({ key, title, price, rating, reviews, delivery, html, site: window.location.hostname, savedAt: Date.now(), folders: chosenFolders });
-                if (progress) {
-                    const pct = Math.round((i + 1) / total * 60);
-                    progress.update(pct, '⏳ Подготовка: ' + (i + 1) + ' / ' + total + ' карточек...');
-                }
-            }
-
-            if (progress) progress.update(65, '⏳ Сохранение в базу...');
-
-            let added = 0;
-            try {
-                // Читаем один раз — используем для addToSaved и для обновления папок
-                const existingAll = await getSavedTiles();
-                const existingMap = new Map(existingAll.map(t => [t.key, t])); // O(1) lookup
-
-                const saveKeys = new Set(toSave.map(t => t.key));
-                const reallyNew = toSave.filter(t => !existingMap.has(t.key));
-
-                // Добавляем новые карточки
-                const withNew = [...existingAll, ...reallyNew];
-                added = reallyNew.length;
-
-                // Обновляем папки у уже существующих карточек из toSave — за O(n), без find()
-                let folderChanged = false;
-                if (chosenFolders.length > 0) {
-                    for (const tile of toSave) {
-                        const existing = existingMap.get(tile.key);
-                        if (!existing) continue; // новая — папки уже проставлены при создании
-                        const merged = [...new Set([...(existing.folders || []), ...chosenFolders])];
-                        if (merged.length !== (existing.folders || []).length) {
-                            existing.folders = merged;
-                            folderChanged = true;
-                        }
-                    }
-                }
-
-                // Одна запись вместо двух
-                if (added > 0 || folderChanged) {
-                    if (progress) progress.update(80, '⏳ Сохранение...');
-                    await saveTiles(withNew);
-                    reallyNew.forEach(t => savedKeysCache.add(t.key));
-                    refreshSavedKeysCache();
-                    window._invalidateGroupCache?.();
-                }
-            } catch (e) {
-                progress?.remove();
-                showNotification(`❌ Ошибка сохранения: ${e?.message || e}`, 'error');
-                return;
-            }
-
-            selectedKeys.clear();
-            updateSelectionPanel();
-            renderTiles(currentTiles);
-
-            const folderStr = chosenFolders.length ? ` → 📁 ${chosenFolders.join(', ')}` : '';
-            let msg;
-            if (added === 0 && chosenFolders.length === 0) {
-                msg = '⚠️ Все выбранные товары уже сохранены';
-            } else if (added === 0) {
-                msg = '📁 Папки обновлены для ' + toSave.length + ' товаров' + folderStr;
-            } else if (added < toSave.length) {
-                msg = '🔖 Сохранено: ' + added + ' из ' + toSave.length + folderStr;
-            } else {
-                msg = '🔖 Сохранено: ' + added + ' товаров' + folderStr;
-            }
-
-            if (progress) {
-                progress.update(100, msg);
-                setTimeout(() => progress.remove(), 2000);
-            } else {
-                showNotification(msg, added === 0 && chosenFolders.length === 0 ? 'warning' : 'info');
-            }
-        });
-    });
-
-    uiRoot.appendChild(header);
-    cardsHost.appendChild(productsContainer);
-    bottomUiRoot.appendChild(selectionPanel);
-
-    // ─── Контейнер сохранённых товаров ────────────────────────────────────────────
-    // savedContainer добавляется после folderRow (ниже)
-
-    // Панель действий для сохранённых
-    const savedPanel = document.createElement('div');
-    savedPanel.style.cssText = `
-    display: none; padding: 8px 20px;
-    background: #fff8e1; border-top: 1px solid #ffe082;
-    flex-shrink: 0; flex-direction: column; gap: 6px;
-`;
-
-    // строка 1: счётчик, кнопки выделения, хранилище
-    const savedPanelRow1 = document.createElement('div');
-    savedPanelRow1.style.cssText = 'display:flex; gap:8px; align-items:center; flex-wrap:wrap;';
-    // строка 2: импорт/экспорт/очистка
-    const savedPanelRow2 = document.createElement('div');
-    savedPanelRow2.style.cssText = 'display:flex; gap:8px; align-items:center; flex-wrap:wrap;';
-
-    const savedCounter = document.createElement('span');
-    savedCounter.style.cssText = 'font-size:13px; color:#f57f17; font-weight:bold;';
-
-    const storageIndicator = document.createElement('span');
-    storageIndicator.className = 'storageIndicator';
-    storageIndicator.style.cssText = 'font-size:12px; color:#999; margin-left: auto; cursor:help;';
-
-    async function updateStorageIndicator() {
-        // chrome.storage.local — только savedTiles
-        const localUsed = await new Promise(r =>
-            chrome.storage.local.getBytesInUse ? chrome.storage.local.getBytesInUse('savedTiles', r) : r(0)
-        );
-        const localMb = (localUsed / 1024 / 1024).toFixed(2);
-        const localLimit = 10;
-        const localPct = Math.round(localUsed / (localLimit * 1024 * 1024) * 100);
-
-        // IndexedDB — картинки, размер из background (его origin)
-        let imgMb = '?';
-        let imgCount = '';
-        try {
-            const resp = await new Promise(r => chrome.runtime.sendMessage({ action: 'getStorageSize' }, r));
-            if (resp?.ok) {
-                imgMb = (resp.bytes / 1024 / 1024).toFixed(1);
-                imgCount = ` (${resp.count} шт.)`;
-            }
-        } catch { }
-
-        const color = localPct > 80 ? '#e53935' : localPct > 50 ? '#f57f17' : '#999';
-        storageIndicator.style.color = color;
-        storageIndicator.textContent = `💾 атрибуты: ${localMb}/${localLimit} МБ · картинки: ${imgMb} МБ${imgCount}`;
-        storageIndicator.title =
-            `chrome.storage.local (метаданные): ${localMb} МБ из ${localLimit} МБ (${localPct}%)\n` +
-            `IndexedDB (картинки): ~${imgMb} МБ${imgCount} (лимит — десятки ГБ)`;
-    }
-
-    const clearSavedBtn = document.createElement('button');
-    clearSavedBtn.textContent = '🗑 Очистить всё';
-    clearSavedBtn.style.cssText = 'padding:6px 12px; background:#ff5722; color:white; border:none; border-radius:6px; cursor:pointer; font-size:12px;';
-
-    const removeSelectedSavedBtn = document.createElement('button');
-    removeSelectedSavedBtn.textContent = '✕ Удалить выбранные';
-    removeSelectedSavedBtn.style.cssText = 'padding:6px 12px; background:transparent; color:#666; border:1px solid #ccc; border-radius:6px; cursor:pointer; font-size:12px; display:none;';
-
-    const savedSelectionCounter = document.createElement('span');
-    savedSelectionCounter.style.cssText = 'font-size:13px; color:#e64a19; font-weight:bold; display:none;';
-
-    function updateSavedSelectionCounter() {
-        const n = savedSelectedKeys.size;
-        savedSelectionCounter.style.display = n > 0 ? 'inline' : 'none';
-        savedSelectionCounter.textContent = `Выбрано: ${n}`;
-        removeSelectedSavedBtn.style.display = n > 0 ? 'block' : 'none';
-        invertSavedBtn.style.display = n > 0 ? 'inline-block' : 'none';
-        exportSelectedBtn.style.display = n > 0 ? 'inline-block' : 'none';
-        deselectSavedBtn.style.display = n > 0 ? 'inline-block' : 'none';
-    }
-
-    const invertSavedBtn = document.createElement('button');
-    invertSavedBtn.textContent = '⇄ Инвертировать';
-    invertSavedBtn.style.cssText = 'padding:6px 12px; background:transparent; color:#666; border:1px solid #ccc; border-radius:6px; cursor:pointer; font-size:12px;';
-    invertSavedBtn.addEventListener('click', () => {
-        currentSavedTiles.forEach(tile => {
-            const k = getTileKey(tile);
-            if (!k) return;
-            if (savedSelectedKeys.has(k)) savedSelectedKeys.delete(k);
-            else savedSelectedKeys.add(k);
-        });
-        // обновляем визуал всех карточек
-        savedContainer.querySelectorAll('[data-saved-key]').forEach(w => {
-            const k = w.dataset.savedKey;
-            const selected = savedSelectedKeys.has(k);
-            const cb = w.querySelector('.saved-checkbox');
-            if (cb) {
-                cb.style.display = selected ? 'flex' : 'none';
-                cb.style.background = selected ? '#ff5722' : 'rgba(255,255,255,0.9)';
-                cb.style.borderColor = selected ? '#ff5722' : '#ccc';
-                cb.textContent = selected ? '✓' : '';
-            }
-            w.style.outline = selected ? '2px solid #ff5722' : '';
-            w.style.borderRadius = selected ? '8px' : '';
-        });
-        updateSavedSelectionCounter();
-    });
-
-    invertSavedBtn.style.cssText = 'padding:6px 12px; background:transparent; color:#666; border:1px solid #ccc; border-radius:6px; cursor:pointer; font-size:12px; display:none;';
-
-    const { createProgressBar, exportBtn, exportSelectedBtn, importBtn, importInput } = createProductTransfer({
+    const { clearSavedBtn, createProgressBar, removeSelectedSavedBtn, savedCounter, savedPanel, updateSavedSelectionCounter, updateStorageIndicator } = createSavedProductsToolbar({
+        get currentSavedTiles() { return currentSavedTiles; },
+        get lastSavedSelectedIndex() { return lastSavedSelectedIndex; },
+        set lastSavedSelectedIndex(value) { lastSavedSelectedIndex = value; },
+        get lastSavedSelectedKey() { return lastSavedSelectedKey; },
+        set lastSavedSelectedKey(value) { lastSavedSelectedKey = value; },
         get savedContainer() { return savedContainer; },
         get savedSelectedKeys() { return savedSelectedKeys; },
         get showNotification() { return showNotification; },
         get switchTab() { return switchTab; }
     });
-
-    const deselectSavedBtn = document.createElement('button');
-    deselectSavedBtn.textContent = '✕ Снять';
-    deselectSavedBtn.title = 'Снять выделение';
-    deselectSavedBtn.style.cssText = 'padding:5px 10px; background:transparent; color:#666; border:1px solid #ccc; border-radius:6px; cursor:pointer; font-size:12px; display:none;';
-    deselectSavedBtn.addEventListener('click', () => {
-        savedSelectedKeys.clear();
-        lastSavedSelectedKey = null; lastSavedSelectedIndex = -1;
-        savedContainer.querySelectorAll('[data-saved-key]').forEach(w => {
-            const cb = w.querySelector('.saved-checkbox');
-            if (cb) { cb.style.display = 'none'; cb.textContent = ''; cb.style.background = 'rgba(255,255,255,0.9)'; cb.style.borderColor = '#ccc'; }
-            w.style.outline = '';
-        });
-        updateSavedSelectionCounter();
-    });
-
-    const selectAllSavedBtn = document.createElement('button');
-    selectAllSavedBtn.textContent = '☑ Все';
-    selectAllSavedBtn.title = 'Выбрать все карточки';
-    selectAllSavedBtn.style.cssText = 'padding:5px 10px; background:transparent; color:#666; border:1px solid #ccc; border-radius:6px; cursor:pointer; font-size:12px;';
-    selectAllSavedBtn.addEventListener('click', () => {
-        savedContainer.querySelectorAll('[data-saved-key]').forEach(w => {
-            const k = w.dataset.savedKey;
-            if (k) savedSelectedKeys.add(k);
-            const cb = w.querySelector('.saved-checkbox');
-            if (cb) { cb.style.display = 'flex'; cb.style.background = '#ff5722'; cb.style.borderColor = '#ff5722'; cb.textContent = '✓'; }
-            w.style.outline = '2px solid #ff5722';
-            w.style.borderRadius = '8px';
-        });
-        updateSavedSelectionCounter();
-    });
-
-    // строка 1: выделение
-    savedPanelRow1.appendChild(selectAllSavedBtn);
-    savedPanelRow1.appendChild(savedSelectionCounter);
-    savedPanelRow1.appendChild(deselectSavedBtn);
-    savedPanelRow1.appendChild(invertSavedBtn);
-    savedPanelRow1.appendChild(removeSelectedSavedBtn);
-    savedPanelRow1.appendChild(exportSelectedBtn);
-
-    // строка 2: импорт/экспорт/очистка + счётчик и хранилище прижаты вправо
-    savedPanelRow2.appendChild(exportBtn);
-    savedPanelRow2.appendChild(importBtn);
-    savedPanelRow2.appendChild(importInput);
-    savedPanelRow2.appendChild(clearSavedBtn);
-    savedCounter.style.marginLeft = 'auto';
-    savedPanelRow2.appendChild(savedCounter);
-    savedPanelRow2.appendChild(storageIndicator);
-
-    savedPanel.appendChild(savedPanelRow1);
-    savedPanel.appendChild(savedPanelRow2);
     const folderRow = document.createElement('div');
     folderRow.style.cssText = `
         display: none; flex-direction: column; gap: 6px; padding: 6px 20px;
@@ -2668,7 +626,7 @@ function createSortedProductsPopup(mode = 'asc') {
     let activeFolderFilter = null; // null = все
     let folderSearchQuery = '';
 
-    const { renderFolderRow, savedSelectedKeys, showFolderMenu } = createProductFolders({
+    const { renderFolderRow, savedSelectedKeys, showFolderMenu, destroy: destroyFolders } = createProductFolders({
         get activeFolderFilter() { return activeFolderFilter; },
         set activeFolderFilter(value) { activeFolderFilter = value; },
         get bottomUiRoot() { return bottomUiRoot; },
@@ -2684,7 +642,7 @@ function createSortedProductsPopup(mode = 'asc') {
         get uiRoot() { return uiRoot; }
     });
 
-    const { renderSavedTiles } = createSavedProductsView({
+    const { renderSavedTiles, destroy: destroySavedView } = createSavedProductsView({
         get _savedGroupCache() { return _savedGroupCache; },
         set _savedGroupCache(value) { _savedGroupCache = value; },
         get activeFolderFilter() { return activeFolderFilter; },
@@ -2736,118 +694,11 @@ function createSortedProductsPopup(mode = 'asc') {
     document.body.appendChild(overlay);
 
     // Кастомный тултип для названий карточек
-    const tileTooltip = document.createElement('div');
-    tileTooltip.style.cssText = 'display:none;position:fixed;z-index:100001;'
-        + 'background:rgba(0,0,0,0.85);color:white;'
-        + 'padding:6px 10px;border-radius:6px;'
-        + 'font-size:12px;line-height:1.4;max-width:300px;'
-        + 'pointer-events:none;white-space:normal;'
-        + 'box-shadow:0 2px 8px rgba(0,0,0,0.3);'
-        + 'will-change:transform;'; // подсказка GPU что элемент будет двигаться
-    // Используем transform вместо left/top — не вызывает layout reflow
-    tileTooltip.style.top = '0';
-    tileTooltip.style.left = '0';
-    document.body.appendChild(tileTooltip);
-
-    // Кешируем DOM-узлы тултипа чтобы не пересоздавать innerHTML
-    const _ttTitle = document.createElement('div');
-    _ttTitle.style.marginBottom = '4px';
-    const _ttStatus = document.createElement('span');
-    tileTooltip.appendChild(_ttTitle);
-    tileTooltip.appendChild(_ttStatus);
-
-    let tooltipTimer = null;
-    let _ttCurrentEl = null; // элемент над которым сейчас тултип
-    let _ttMouseX = 0, _ttMouseY = 0; // последние координаты мыши
-    let _ttRafId = null; // requestAnimationFrame id для позиционирования
-
-    function _ttPosition() {
-        // transform не вызывает reflow — в отличие от left/top
-        const x = _ttMouseX + 14;
-        const y = _ttMouseY + 14;
-        // не выходим за правый/нижний край экрана
-        const maxX = window.innerWidth - tileTooltip.offsetWidth - 4;
-        const maxY = window.innerHeight - tileTooltip.offsetHeight - 4;
-        tileTooltip.style.transform = `translate(${Math.min(x, maxX)}px, ${Math.min(y, maxY)}px)`;
-        _ttRafId = null;
-    }
-
-    function _ttShow(el, title, statusHtml) {
-        _ttTitle.style.display = title ? '' : 'none';
-        if (title) _ttTitle.textContent = title;
-        _ttStatus.innerHTML = statusHtml;
-        tileTooltip.style.display = 'block';
-        // Позиционируем сразу (offsetWidth нужен после display:block)
-        requestAnimationFrame(_ttPosition);
-    }
-
-    function _ttHide() {
-        clearTimeout(tooltipTimer);
-        tooltipTimer = null;
-        _ttCurrentEl = null;
-        tileTooltip.style.display = 'none';
-    }
-
-    // Единый mousemove-обработчик через rAF — не дёргаем DOM на каждый пиксель
-    function _onMouseMove(e) {
-        _ttMouseX = e.clientX;
-        _ttMouseY = e.clientY;
-        if (tileTooltip.style.display !== 'none' && !_ttRafId) {
-            _ttRafId = requestAnimationFrame(_ttPosition);
-        }
-    }
-
-    // Проверка "сохранён ли" только по key — O(1) через Set, без итерации
-    function _isSaved(key) { return key ? savedKeysCache.has(key) : false; }
-    function _isInSearch(key) { return key ? seenTiles.has(key) : false; }
-
-    // productsContainer — делегирование через mouseover + mouseleave
-    productsContainer.addEventListener('mouseover', (e) => {
-        if (!hoverTooltipEnabled) return; // подсказка отключена — не тратим время на closest()/таймер
-        const tooltipEl = e.target.closest('[data-tooltip]');
-        if (tooltipEl === _ttCurrentEl) return; // уже над этим элементом — ничего не делаем
-        _ttHide();
-        if (!tooltipEl) return;
-        _ttCurrentEl = tooltipEl;
-        tooltipTimer = setTimeout(() => {
-            const title = tooltipEl.getAttribute('data-tooltip') || '';
-            const key = tooltipEl.dataset.tileKey;
-            const status = _isSaved(key)
-                ? '<span style="color:#81c784">🔖 Сохранён</span>'
-                : '<span style="color:#ef9a9a">🔖 Не сохранён</span>';
-            _ttShow(tooltipEl, title, status);
-        }, 300); // увеличили задержку с 100 до 300мс — меньше лишних показов при быстром движении
+    const { _ttHide, destroy: destroyTooltip } = createProductTooltip({
+        get hoverTooltipEnabled() { return panelTools.hoverTooltipEnabled; },
+        get productsContainer() { return productsContainer; },
+        get savedContainer() { return savedContainer; }
     });
-
-    productsContainer.addEventListener('mouseleave', () => { _ttHide(); }, true);
-    productsContainer.addEventListener('mousemove', _onMouseMove);
-
-    // savedContainer — аналогично
-    savedContainer.addEventListener('mouseover', (e) => {
-        if (!hoverTooltipEnabled) return;
-        const tooltipEl = e.target.closest('[data-tooltip]');
-        if (tooltipEl === _ttCurrentEl) return;
-        _ttHide();
-        if (!tooltipEl) return;
-        _ttCurrentEl = tooltipEl;
-        tooltipTimer = setTimeout(() => {
-            const title = tooltipEl.getAttribute('data-tooltip') || '';
-            const key = tooltipEl.dataset.savedKey;
-            const status = _isInSearch(key)
-                ? '<span style="color:#81c784">🔍 Есть в поиске</span>'
-                : '<span style="color:#ef9a9a">🔍 Нет в поиске</span>';
-            _ttShow(tooltipEl, title, status);
-        }, 300);
-    });
-
-    savedContainer.addEventListener('mouseleave', () => { _ttHide(); }, true);
-    savedContainer.addEventListener('mousemove', _onMouseMove);
-
-    // ─── Фильтрация и сортировка ───────────────────────────────────────────────
-
-    // @сортировка(поле, направление) — специальная часть DSL, не участвующая в фильтрации.
-    // Поддерживаются: возр/убыв, asc/desc, а-я/я-а и старые ↑/↓ как алиасы.
-    // Правила сортировки: src/content/products/sorting.js
 
     const { getCounterSortMode, getFilteredAndSorted } = createProductFilters({
         get currentMode() { return currentMode; },
@@ -2901,14 +752,14 @@ function createSortedProductsPopup(mode = 'asc') {
 
     // Ограниченный LRU-кэш готовых клонов карточек для site-style.
     // Не держим тысячи DOM-клонов: максимум несколько последних экранов.
-    const { renderTiles } = createSearchProductsView({
+    const { renderTiles, destroy: destroySearchView } = createSearchProductsView({
         get _searchGroupCache() { return _searchGroupCache; },
         set _searchGroupCache(value) { _searchGroupCache = value; },
         get applyFilters() { return applyFilters; },
         get cardScale() { return cardScale; },
         get currentTiles() { return currentTiles; },
         set currentTiles(value) { currentTiles = value; },
-        get debugMode() { return debugMode; },
+        get debugMode() { return panelTools.debugMode; },
         get getCounterSortMode() { return getCounterSortMode; },
         get getFilteredAndSorted() { return getFilteredAndSorted; },
         get groupBtn() { return groupBtn; },
@@ -2994,7 +845,9 @@ function createSortedProductsPopup(mode = 'asc') {
     renderTiles(getFilteredAndSorted(''));
 
     // Callback для внешнего обновления поиска (используется в applyHeuristicSelectors)
-    window._ssRefreshSearch = () => { collectTiles(); applyFilters(); };
+    const refreshSearch = () => { collectTiles(); applyFilters(); };
+    window._ssRefreshSearch = refreshSearch;
+    window._ssApplyFilters = applyFilters;
     // Показываем баннер если эвристика уже нашла что-то до открытия попапа
     showHeuristicBanner();
 
@@ -3015,6 +868,7 @@ function createSortedProductsPopup(mode = 'asc') {
     document.body.style.cssText += `position:fixed;top:-${scrollY}px;width:100%;`;
 
     let isMinimized = false;
+    let panelClosed = false;
 
     // Мини-попап: только две кнопки 🗖 ✕ в правом нижнем углу
     const miniBar = document.createElement('div');
@@ -3071,6 +925,10 @@ function createSortedProductsPopup(mode = 'asc') {
     minimizeBtn.onclick = () => isMinimized ? restorePopup() : minimizePopup();
 
     function closePopup() {
+        if (panelClosed) return;
+        panelClosed = true;
+        clearTimeout(toastTimer);
+        clearTimeout(_filterDebounceTimer);
         document.body.style.position = '';
         document.body.style.top = '';
         document.body.style.width = '';
@@ -3078,13 +936,22 @@ function createSortedProductsPopup(mode = 'asc') {
         overlay.remove();
         miniBar.remove();
         style.remove();
-        tileTooltip.remove();
+        destroyTooltip();
+        destroySearchEditor();
+        destroySearchHelp();
+        destroyImageSearch();
+        destroyFolders();
+        destroySearchView();
+        destroySavedView();
+        panelTools.destroy();
         closeDeliveryCalendar();
         savedQueries.destroy();
-        if (pickerActive) stopCardPicker();
+        if (isSelectorPicking()) pickerStopPicking();
         document.removeEventListener('keydown', escHandler);
         updateLiveCounterBadge(); // возвращаем плашку счётчика, если она включена
         if (window._ssClosePopup === closePopup) window._ssClosePopup = null;
+        if (window._ssRefreshSearch === refreshSearch) window._ssRefreshSearch = null;
+        if (window._ssApplyFilters === applyFilters) window._ssApplyFilters = null;
     }
 
     window._ssClosePopup = closePopup;
@@ -3092,7 +959,7 @@ function createSortedProductsPopup(mode = 'asc') {
 
     function escHandler(e) {
         if (e.key !== 'Escape') return;
-        if (pickerActive) return; // picker сам обработает Esc
+        if (isSelectorPicking()) return; // picker сам обработает Esc
         if (isMinimized) restorePopup();
         else closePopup();
     }

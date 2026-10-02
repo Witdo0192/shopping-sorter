@@ -1,6 +1,7 @@
 // Папки сохранённых товаров: меню, поиск, переименование и выбор.
 // Геттеры читают текущее состояние; сеттеры сохраняют изменения в панели.
 function createProductFolders(dependencies) {
+    const lifecycle = createUiLifecycle();
     function getAllFolders(tiles) {
         const set = new Set();
         tiles.forEach(t => (t.folders || []).forEach(f => set.add(f)));
@@ -250,6 +251,7 @@ function createProductFolders(dependencies) {
         menu.style.top = (rect.bottom + 4) + 'px';
         menu.style.right = Math.max(8, document.documentElement.clientWidth - rect.right) + 'px';
         document.body.appendChild(menu);
+        lifecycle.add(() => menu.remove());
         search.focus();
 
         const closeHandler = e => {
@@ -258,7 +260,7 @@ function createProductFolders(dependencies) {
                 document.removeEventListener('click', closeHandler);
             }
         };
-        setTimeout(() => document.addEventListener('click', closeHandler), 0);
+        setTimeout(() => lifecycle.listen(document, 'click', closeHandler), 0);
     }
 
     dependencies.uiRoot.appendChild(dependencies.folderRow);
@@ -390,6 +392,7 @@ function createProductFolders(dependencies) {
 
         dependencies.popup.style.position = 'relative';
         dependencies.uiRoot.appendChild(menu);
+        lifecycle.add(() => menu.remove());
         newInput.focus();
         // закрываем только при клике ВНЕ меню
         const closeHandler = e => {
@@ -398,7 +401,7 @@ function createProductFolders(dependencies) {
                 document.removeEventListener('click', closeHandler);
             }
         };
-        setTimeout(() => document.addEventListener('click', closeHandler), 0);
+        setTimeout(() => lifecycle.listen(document, 'click', closeHandler), 0);
     }
 
 
@@ -408,5 +411,5 @@ function createProductFolders(dependencies) {
         await saveTiles(updated);
     }
 
-    return { renderFolderRow, savedSelectedKeys, showFolderMenu };
+    return { renderFolderRow, savedSelectedKeys, showFolderMenu, destroy: lifecycle.destroy };
 }

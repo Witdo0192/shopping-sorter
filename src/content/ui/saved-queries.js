@@ -1,5 +1,6 @@
 // Сохранённые запросы: локальное состояние, диалог, меню и storage. dependencies связывает меню со строкой поиска и уведомлениями.
 function createSavedQueries(dependencies) {
+    const lifecycle = createUiLifecycle();
     let savedSearchQueries = [];
     const savedQueriesBtn = document.createElement('button');
     savedQueriesBtn.type = 'button';
@@ -27,6 +28,7 @@ function createSavedQueries(dependencies) {
 
     function showSavedQueryDialog({item=null, onSave=null}={}) {
         const overlay = document.createElement('div');
+        lifecycle.add(() => overlay.remove());
         overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;font:13px sans-serif;';
         const dialog = document.createElement('div');
         dialog.style.cssText = 'width:min(760px, calc(100vw - 32px));max-height:min(90vh,720px);display:flex;flex-direction:column;background:#fff;border:1px solid #d8d8d8;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.28);overflow:hidden;box-sizing:border-box;';
@@ -285,6 +287,7 @@ function createSavedQueries(dependencies) {
 
     return {
         destroy() {
+            lifecycle.destroy();
             savedQueriesMenu.remove();
             document.removeEventListener('mousedown', onOutsideMouseDown, true);
             window.removeEventListener('resize', onWindowResize);
