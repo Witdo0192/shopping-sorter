@@ -53,6 +53,9 @@
         "src/content/products/sorting.js",
         "src/content/ui/folder-dialog.js",
         "src/content/ui/panel-styles.js",
+        "src/content/ui/delivery-calendar.js",
+        "src/content/ui/saved-queries.js",
+        "src/content/ui/product-transfer.js",
         "src/content/ui/products-panel.js",
         "search.js",
         "content.js"
