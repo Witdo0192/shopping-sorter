@@ -50,6 +50,10 @@
         "src/content/products/metrics.js",
         "src/content/images/storage.js",
         "src/content/ui/product-card.js",
+        "src/content/products/sorting.js",
+        "src/content/ui/folder-dialog.js",
+        "src/content/ui/panel-styles.js",
+        "src/content/ui/products-panel.js",
         "search.js",
         "content.js"
       ]

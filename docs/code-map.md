@@ -3,8 +3,9 @@
 Описывает существующую структуру по чтению исходников 2026-10-02.
 Обновляется вместе с переносами кода. Имена функций — ориентиры для поиска;
 номера строк намеренно не фиксируем, поскольку они изменяются.
-Два прохода разделения согласованы и выполнены. Ниже — фактическая структура,
-включая оставшиеся общие зависимости; большая панель пока не разобрана.
+Три прохода разделения согласованы и выполнены. Ниже — фактическая структура,
+включая оставшиеся общие зависимости. Большая панель вынесена, но её замыкание
+ещё требует дальнейшего разделения.
 
 ## Точки входа и контексты
 
@@ -26,6 +27,10 @@
 | `src/content/products/metrics.js` | Цены, рейтинг, отзывы, даты, разбор единиц и кэш метрик |
 | `src/content/images/storage.js` | Получение изображений и сообщения к background |
 | `src/content/ui/product-card.js` | Представление одной карточки и нормализованный HTML |
+| `src/content/products/sorting.js` | Разбор @сортировка, получение значений полей и сравнение товаров |
+| `src/content/ui/folder-dialog.js` | Получение папок и диалог выбора при сохранении |
+| `src/content/ui/panel-styles.js` | Создание стилей панели и возврат узла для удаления при закрытии |
+| `src/content/ui/products-panel.js` | Большая панель: композиция UI, события, фильтры и списки; остаётся около 6 000 строк |
 | `search.js`, `content.js` | Поиск и оставшаяся логика страницы; загружаются после перечисленных файлов |
 | `sites.json` | Стандартные домены, селекторы полей и профили карточек |
 | `units.json` | Стандартные категории, единицы, множители, точность и приоритеты |
@@ -44,7 +49,8 @@
 3. `loadSelectors()` читает стандартные JSON и пользовательские `sites`/`units`.
    Сохранённая конфигурация имеет приоритет над стандартной.
 4. Popup отправляет `sortProducts` → обработчик `chrome.runtime.onMessage` в
-   `content.js` → `createSortedProductsPopup()`. Большая панель создаётся в DOM страницы.
+   `content.js` → `createSortedProductsPopup()` из `ui/products-panel.js`.
+   Большая панель создаётся в DOM страницы.
 5. Поиск и фильтры панели используют `parseSearchQuery()` и `matchesTileSearchTokens()`.
 6. Метаданные товаров проходят через `getSavedTiles()` / `saveTiles()`;
    изображения — через сообщения к `background.js` и IndexedDB.
@@ -68,9 +74,12 @@
 | Создание отдельных карточек | `ui/product-card.js`: `createCustomSearchTile`, `buildNormalizedTileHtml`, `applySavedDataToTileEl` |
 | Визуальное сходство | `src/content/images/similarity.js`: `computePHash`, `computeColorHistogram`, `extractFeatures`, `groupTilesByVisualSimilarity` |
 | Подбор селекторов | `src/content/selectors/picker.js`: функции `picker*`, `openSelectorPickerPanel` |
-| Большая панель товаров | `createSortedProductsPopup` и её вложенные функции |
+| Сортировка из поисковой строки | `products/sorting.js`: `parseSortRulesFromQuery`, `stripSortRulesFromQuery`, `getDslSortFieldValue`, `compareByDslSortRules` |
+| Диалог папок | `ui/folder-dialog.js`: `getAllFoldersGlobal`, `showSaveFolderDialog` |
+| Стили панели | `ui/panel-styles.js`: `createProductsPanelStyle` |
+| Большая панель товаров | `ui/products-panel.js`: `createSortedProductsPopup` и её вложенные функции |
 
-Внутри `createSortedProductsPopup()` ищите `renderDeliveryCalendar` для календаря,
+В `ui/products-panel.js` внутри `createSortedProductsPopup()` ищите `renderDeliveryCalendar` для календаря,
 `renderSavedQueriesMenu` для запросов, `renderFolderRow` для папок,
 `exportWithImages` для экспорта, `renderSavedTiles` для сохранённых,
 `applyFilters` и `renderTiles` для фильтрации и отображения,
@@ -125,6 +134,15 @@
   или сбора само по себе не запускает эти действия раньше инициализации.
 - `ui/product-card.js` отвечает за одну карточку, не за всю панель. Её поля
   берутся из файлов products, а изображения — через images/storage.
+- `products/sorting.js` не читает состояние панели; получает товары и правила
+  аргументами, а значения извлекает через функции products. Выбранный кнопками
+  `currentMode`, фильтрация и управление отображением остаются внутри панели.
+  Разбор DSL используется и поиском, и сохранёнными товарами, и синхронизацией UI.
+- `createProductsPanelStyle()` подключает style к document.head и возвращает
+  тот же узел. Панель удаляет его при закрытии; жизненный цикл сохранён.
+- `content.js` теперь около 1 000 строк: runtime, загрузка конфигурации,
+  эвристики, счётчик и сообщения. Панель остаётся большим отдельным участком,
+  не считайте её внутреннюю архитектуру законченной из-за перемещения файла.
 
 ## Настройки и сообщения
 
