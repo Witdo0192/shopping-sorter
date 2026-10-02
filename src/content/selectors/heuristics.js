@@ -376,6 +376,7 @@ function checkSelectorWorks(sel, context) {
 
 function scheduleBreakCheck() {
     setTimeout(() => {
+        if (!extensionEnabled) return;
         // Повторная проверка после позднего рендера SPA. Каждый профиль карточки проверяется независимо.
         for (const p of SELECTOR_PROFILES) {
             if (p && p._foundCount === 0) {
@@ -385,6 +386,8 @@ function scheduleBreakCheck() {
             }
         }
         if (!SELECTORS) { window._tileCheckResult = { found: 0, broken: true }; return; }
+        // Полный конфиг нужен и для проверки полей, и для diff-модала.
+        const orig = SELECTORS._originalConfig || SELECTORS;
 
         // SELECTORS.tile может быть массивом или строкой — нормализуем
         const tileSels = Array.isArray(SELECTORS.tile) ? SELECTORS.tile : [SELECTORS.tile].filter(Boolean);
@@ -447,8 +450,6 @@ function scheduleBreakCheck() {
 
         console.log('🔍 selectorStatus:', selectorStatus, 'checkTile:', checkTile?.className);
 
-        // Полный оригинальный конфиг с массивами (для diff-модала)
-        const orig = SELECTORS._originalConfig || SELECTORS;
         const toArr = v => !v ? [] : Array.isArray(v) ? v : [v];
 
         // Эвристические подсказки для сломанных полей
@@ -488,6 +489,7 @@ function scheduleBreakCheck() {
         if (found === 0 && !SELECTORS._heuristic) tryHeuristicSelectors(SELECTORS);
     }, 3000);
     [4200, 6500, 9000].forEach(delay => setTimeout(() => {
+        if (!extensionEnabled) return;
         let changed = false;
         for (const p of SELECTOR_PROFILES) {
             if (!p || p._foundCount > 0) continue;

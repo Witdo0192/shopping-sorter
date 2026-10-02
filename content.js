@@ -114,7 +114,6 @@ async function loadSelectors() {
                 const working = tryConfig(config);
                 if (working) {
                     SELECTOR_PROFILES = working;
-                invalidateTileMetricsCache();
                     invalidateTileMetricsCache();
                     siteKnownInDatabase = true;
                     SELECTORS = { ...config, cards: working, tile: working.map(p => p.tile).join(', '), _originalConfig: config, _siteName: name, _knownInDatabase: true };
@@ -133,7 +132,7 @@ async function loadSelectors() {
 
         for (const [name, config] of Object.entries(sites)) {
             const working = tryConfig(config);
-            if (working) {
+            if (working?.some(profile => profile._foundCount > 0)) {
                 SELECTOR_PROFILES = working;
                 SELECTORS = { ...config, cards: working, tile: working.map(p => p.tile).join(', '), _originalConfig: config, _siteName: name, _knownInDatabase: false };
                 console.log(`✅ определён сайт по DOM — ${name}, шаблонов карточек: ${working.length}`);
