@@ -203,3 +203,33 @@ function isTileValid(tile) {
     const hasPrice = getPrice(tile) !== 99999999;
     return hasTitle && hasPrice;
 }
+
+function getSelectorProfileForTile(tile) {
+    if (!tile) return null;
+    const mapped = TILE_PROFILE_MAP.get(tile);
+    if (mapped) return mapped;
+    for (const p of SELECTOR_PROFILES) {
+        for (const sel of selectorValueArray(p?.tile)) {
+            try { if (sel && tile.matches?.(sel)) return p; } catch { }
+        }
+    }
+    return SELECTOR_PROFILES[0] || null;
+}
+
+function selectorValueArray(value) {
+    if (Array.isArray(value)) return value.filter(Boolean);
+    return value ? [value] : [];
+}
+
+function profileFieldSelectors(tile, field) {
+    const profile = getSelectorProfileForTile(tile);
+    if (!profile) return [];
+    return selectorValueArray(profile[field]);
+}
+
+function findWithinTileOrSelf(tile, selector) {
+    if (!tile || !selector) return null;
+    if (selector === CURRENT_PAGE_LINK_SELECTOR) return tile;
+    try { if (tile.matches?.(selector)) return tile; } catch { }
+    try { return tile.querySelector(selector); } catch { return null; }
+}

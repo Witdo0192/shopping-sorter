@@ -3,9 +3,9 @@
 Описывает существующую структуру по чтению исходников 2026-10-02.
 Обновляется вместе с переносами кода. Имена функций — ориентиры для поиска;
 номера строк намеренно не фиксируем, поскольку они изменяются.
-Три прохода разделения согласованы и выполнены. Ниже — фактическая структура,
-включая оставшиеся общие зависимости. Большая панель вынесена, но её замыкание
-ещё требует дальнейшего разделения.
+Выполнены семь проходов. Точка входа — около 300 строк, композиция панели —
+около 970 строк; основные части UI создаются отдельно с явными зависимостями.
+Принципы и владение состоянием описаны в [архитектуре](architecture.md).
 
 ## Точки входа и контексты
 
@@ -20,6 +20,7 @@
 | `src/content/config/domains.js` | Нормализация и сравнение доменов |
 | `src/content/images/similarity.js` | Признаки изображений, их кэш и группировка по сходству |
 | `src/content/selectors/picker.js` | Подбор селекторов, подсветка, выбор элементов и сохранение конфигурации |
+| `src/content/selectors/heuristics.js` | Эвристики карточек, диагностика селекторов и предложения исправлений |
 | `src/content/storage/saved-products.js` | Метаданные сохранённых товаров, обновления и миграция старых изображений |
 | `src/content/products/fields.js` | Поля карточек, дополнительные атрибуты, ключи и проверка пригодности |
 | `src/content/products/quantities.js` | Количества, цена за единицу, приоритеты и данные бейджей |
@@ -28,10 +29,15 @@
 | `src/content/images/storage.js` | Получение изображений и сообщения к background |
 | `src/content/ui/product-card.js` | Представление одной карточки и нормализованный HTML |
 | `src/content/products/sorting.js` | Разбор @сортировка, получение значений полей и сравнение товаров |
+| `src/content/products/filtering.js` | Запрос, категории, диапазоны и сортировка; получает состояние полей явно |
 | `src/content/ui/folder-dialog.js` | Получение папок и диалог выбора при сохранении |
 | `src/content/ui/panel-styles.js` | Создание стилей панели и возврат узла для удаления при закрытии |
-| `src/content/ui/products-panel.js` | Большая панель: композиция UI, события, фильтры и списки; остаётся около 6 000 строк |
-| `search.js`, `content.js` | Поиск и оставшаяся логика страницы; загружаются после перечисленных файлов |
+| `src/content/ui/live-counter.js` | Счётчик и причины отбраковки карточек |
+| `src/content/ui/unit-badges.js` | Предпочтения и оформление цены за единицу |
+| `src/content/ui/products-panel.js` | Создание частей панели, общее состояние, связи и закрытие |
+| `src/content/ui/` — остальные части | Отдельные функции UI; подробная таблица ниже |
+| `search.js` | Разбор и проверка поисковых выражений |
+| `content.js` | Запуск, загрузка конфигурации, сообщения, наблюдение и выключение обработки страницы |
 | `sites.json` | Стандартные домены, селекторы полей и профили карточек |
 | `units.json` | Стандартные категории, единицы, множители, точность и приоритеты |
 | `icons/` | Значки расширения |
@@ -63,8 +69,8 @@
 | --- | --- |
 | Включение/выключение и очистка runtime | `setExtensionEnabled`, `removeExtensionRuntime`, `init`, обработчики `chrome.storage.onChanged` |
 | Загрузка конфигураций | `loadSelectors` в `content.js`; нормализация и домены — в `src/content/config/` |
-| Эвристики и диагностика селекторов | `detectTilesHeuristic`, `tryHeuristicSelectors`, `scheduleBreakCheck` |
-| Счётчик и причины отклонения карточек | `updateLiveCounterBadge`, `getCurrentDomTileCount`, `renderRejectedPanel` |
+| Эвристики и диагностика селекторов | `selectors/heuristics.js`: `detectTilesHeuristic`, `tryHeuristicSelectors`, `scheduleBreakCheck` |
+| Счётчик и причины отклонения карточек | `ui/live-counter.js`: `updateLiveCounterBadge`, `getCurrentDomTileCount`, `renderRejectedPanel` |
 | Сохранение, удаление, обновление и миграция | `storage/saved-products.js`: `getSavedTiles`, `saveTiles`, `addToSaved`, `removeFromSaved`, `flushSavedDataUpdates`, `migrateBase64FromHtml` |
 | Извлечение полей и ключей | `products/fields.js`: `getTileTitle`, `getTileId`, `getTileKey`, `getTileUrl`, `getExtraTileAttributes` |
 | Количества и цена за единицу | `products/quantities.js`: `getAllUnitResultsFromText`, `getUnitPriceOptions`, `getPreferredUnitPriceOption`, `getPricePerUnit` |
@@ -79,12 +85,35 @@
 | Стили панели | `ui/panel-styles.js`: `createProductsPanelStyle` |
 | Большая панель товаров | `ui/products-panel.js`: `createSortedProductsPopup` и её вложенные функции |
 
-В `ui/products-panel.js` внутри `createSortedProductsPopup()` ищите `renderDeliveryCalendar` для календаря,
-`renderSavedQueriesMenu` для запросов, `renderFolderRow` для папок,
-`exportWithImages` для экспорта, `renderSavedTiles` для сохранённых,
-`applyFilters` и `renderTiles` для фильтрации и отображения,
-`closePopup` для закрытия. Поиск по изображению, автодополнение, синхронизация
-полей фильтров и виртуализация также находятся в этой функции.
+## Части панели
+
+Пути ниже относительны к `src/content/ui/`. Место создания и передачи
+`dependencies` ищите в products-panel; вложенные части создаются также
+в filter-controls и saved-products-toolbar.
+
+| Файл | Ответственность / точка входа |
+| --- | --- |
+| `delivery-calendar.js` | Календарь, выбор дат, настройки — `createDeliveryCalendar` |
+| `saved-queries.js` | Меню и диалог запросов — `createSavedQueries` |
+| `product-transfer.js` | Экспорт и импорт с изображениями — `createProductTransfer` |
+| `product-folders.js` | Папки, их поиск и изменение — `createProductFolders` |
+| `search-products-view.js` | Список текущих товаров, группы и виртуализация — `createSearchProductsView` |
+| `saved-products-view.js` | Сохранённый список, группы и ленивые изображения — `createSavedProductsView` |
+| `filter-controls.js` | Поля, категории, сброс, счётчик и сворачиваемый блок — `createFilterControls` |
+| `linked-filters.js` | Связь поисковой строки и полей — `createLinkedFilters` |
+| `search-editor.js` | Поле и автодополнение — `createSearchEditor` |
+| `attribute-suggestions.js` | Кэш вариантов и статистики — `createAttributeSuggestions` |
+| `search-help.js` | Подсказка синтаксиса — `createSearchHelp` |
+| `image-search.js` | Образец изображения и управление группировкой — `createImageSearchControls` |
+| `search-selection.js` | Панель выделения и сохранение выбранных — `createSearchSelection` |
+| `saved-products-toolbar.js` | Кнопки сохранённого списка и выбранных товаров — `createSavedProductsToolbar` |
+| `product-tooltip.js` | Название и статус карточки при наведении — `createProductTooltip` |
+| `panel-tools.js` | Debug, обновление данных и настройки бейджей — `createPanelTools` |
+| `extra-attributes.js` | Сводка заполненности атрибутов — `createExtraAttributesSummary` |
+| `lifecycle.js` | Очистка внешних обработчиков и временного UI — `createUiLifecycle` |
+
+`products/filtering.js` применяет условия; `filter-controls.js` создаёт UI этих
+условий. `products-panel.js` держит общий режим, связывает части и закрывает их.
 
 ## Зависимости и состояние, важные перед переносом
 
@@ -99,7 +128,7 @@
   нормализация чистая, но функции отображения и порядка читают `UNITS` из `content.js`.
 - `similarity.js` владеет вычислениями и `_featureCache`, который пока читается
   панелью напрямую. `groupTilesByVisualSimilarity()` использует `getTileKey`
-  из `content.js`; `getImgSrc` передаётся вызывающей стороной.
+  из `products/fields.js`; `getImgSrc` передаётся вызывающей стороной.
 - Точка входа picker — `openSelectorPickerPanel(hooks)`: hooks передают текущую
   конфигурацию, уведомления, перезагрузку конфигурации и действия панели.
   Picker также использует `CURRENT_PAGE_LINK_SELECTOR`, нормализацию конфигураций
@@ -136,13 +165,16 @@
   берутся из файлов products, а изображения — через images/storage.
 - `products/sorting.js` не читает состояние панели; получает товары и правила
   аргументами, а значения извлекает через функции products. Выбранный кнопками
-  `currentMode`, фильтрация и управление отображением остаются внутри панели.
+  `currentMode` принадлежит панели, а условия передаются в `products/filtering.js`.
   Разбор DSL используется и поиском, и сохранёнными товарами, и синхронизацией UI.
 - `createProductsPanelStyle()` подключает style к document.head и возвращает
   тот же узел. Панель удаляет его при закрытии; жизненный цикл сохранён.
-- `content.js` теперь около 1 000 строк: runtime, загрузка конфигурации,
-  эвристики, счётчик и сообщения. Панель остаётся большим отдельным участком,
-  не считайте её внутреннюю архитектуру законченной из-за перемещения файла.
+- `content.js` теперь около 300 строк: runtime, загрузка конфигурации и сообщения.
+  Эвристики и UI счётчика выделены отдельно. `loadBadgePreferences`, миграция
+  и начальный кэш запускаются из runtime в прежнем порядке.
+- UI создаётся функциями с `dependencies`. Геттеры/сеттеры читают актуальное
+  состояние панели; локальные состояния календаря, меню и редактора скрыты
+  в их замыканиях. `destroy` очищает ресурсы, которые переживают удаление DOM.
 
 ## Настройки и сообщения
 

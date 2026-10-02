@@ -72,6 +72,9 @@
         "src/content/ui/saved-products-toolbar.js",
         "src/content/ui/product-tooltip.js",
         "src/content/ui/filter-controls.js",
+        "src/content/selectors/heuristics.js",
+        "src/content/ui/live-counter.js",
+        "src/content/ui/unit-badges.js",
         "src/content/ui/products-panel.js",
         "search.js",
         "content.js"
