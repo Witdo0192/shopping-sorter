@@ -213,4 +213,3 @@ function createProductTransfer(dependencies) {
 
     return { createProgressBar, exportBtn, exportSelectedBtn, importBtn, importInput };
 }
-

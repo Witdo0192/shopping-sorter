@@ -885,4 +885,3 @@ attrBtn.style.cssText='font-size:9px;padding:3px 5px;border:1px solid #ddd;borde
 
     return { closeDeliveryCalendar, deliveryCalendarActionsWrap, scheduleDeliveryCalendarRefresh, updateDeliveryCalendarButton };
 }
-
