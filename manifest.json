@@ -38,6 +38,11 @@
         "*://*/*"
       ],
       "js": [
+        "src/content/config/sites.js",
+        "src/content/config/units.js",
+        "src/content/config/domains.js",
+        "src/content/images/similarity.js",
+        "src/content/selectors/picker.js",
         "search.js",
         "content.js"
       ]

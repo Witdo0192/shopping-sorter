@@ -3,7 +3,8 @@
 Описывает существующую структуру по чтению исходников 2026-10-02.
 Обновляется вместе с переносами кода. Имена функций — ориентиры для поиска;
 номера строк намеренно не фиксируем, поскольку они изменяются.
-Целевая архитектура пока не согласована.
+Первый проход разделения согласован и выполнен. Ниже — фактическая структура,
+включая оставшиеся общие зависимости; большая панель пока не разобрана.
 
 ## Точки входа и контексты
 
@@ -13,7 +14,12 @@
 | `background.js` | Service worker: сообщения, получение изображений, IndexedDB, очистка неиспользуемых изображений при установке и старте |
 | `popup.html`, `popup.js` | Маленькое окно по значку расширения; обработчики регистрируются на DOMContentLoaded |
 | `settings.html`, `settings.js` | Страница настроек; обработчики и вызов `init()` находятся в самом скрипте |
-| `search.js`, `content.js` | Content scripts страницы магазина, загружаются в этом порядке |
+| `src/content/config/sites.js` | Нормализация стандартных и пользовательских профилей карточек |
+| `src/content/config/units.js` | Нормализация единиц, точность, приоритеты и отображение категорий |
+| `src/content/config/domains.js` | Нормализация и сравнение доменов |
+| `src/content/images/similarity.js` | Признаки изображений, их кэш и группировка по сходству |
+| `src/content/selectors/picker.js` | Подбор селекторов, подсветка, выбор элементов и сохранение конфигурации |
+| `search.js`, `content.js` | Поиск и оставшаяся логика страницы; загружаются после перечисленных файлов |
 | `sites.json` | Стандартные домены, селекторы полей и профили карточек |
 | `units.json` | Стандартные категории, единицы, множители, точность и приоритеты |
 | `icons/` | Значки расширения |
@@ -24,7 +30,8 @@
 
 ## Основные потоки
 
-1. `manifest.json` загружает `search.js`, затем `content.js` на подходящей странице.
+1. `manifest.json` загружает файлы конфигураций, изображений и подбора селекторов,
+   затем `search.js` и `content.js` на подходящей странице.
 2. `content.js` читает флаги из `chrome.storage.local`; при включённом расширении
    вызывает `init()` → `loadSelectors()` → `collectTiles()` и подключает наблюдение страницы.
 3. `loadSelectors()` читает стандартные JSON и пользовательские `sites`/`units`.
@@ -42,7 +49,7 @@
 | Задача | Где искать |
 | --- | --- |
 | Включение/выключение и очистка runtime | `setExtensionEnabled`, `removeExtensionRuntime`, `init`, обработчики `chrome.storage.onChanged` |
-| Конфигурации сайтов и единиц | `loadSelectors`, `normalizeSelectorProfiles`, `normalizeUnitsConfig`, `hostnameMatchesDomain` |
+| Загрузка конфигураций | `loadSelectors` в `content.js`; нормализация и домены — в `src/content/config/` |
 | Эвристики и диагностика селекторов | `detectTilesHeuristic`, `tryHeuristicSelectors`, `scheduleBreakCheck` |
 | Счётчик и причины отклонения карточек | `updateLiveCounterBadge`, `getCurrentDomTileCount`, `renderRejectedPanel` |
 | Сохранение, удаление и обновление метаданных | `getSavedTiles`, `saveTiles`, `addToSaved`, `removeFromSaved`, `flushSavedDataUpdates` |
@@ -53,8 +60,8 @@
 | Даты и значения сортировки | `parseDeliveryDate`, `parseStrictDate`, `getSortValue`, `getSortModeLabel` |
 | Получение и сохранение изображений | `imgToBase64`, `saveImageToBackground`, `loadImagesFromBackground` |
 | Создание карточек | `createCustomSearchTile`, `buildNormalizedTileHtml`, `applySavedDataToTileEl` |
-| Визуальное сходство | `computePHash`, `computeColorHistogram`, `extractFeatures`, `groupTilesByVisualSimilarity` |
-| Подбор селекторов | функции `picker*`, `openSelectorPickerPanel` |
+| Визуальное сходство | `src/content/images/similarity.js`: `computePHash`, `computeColorHistogram`, `extractFeatures`, `groupTilesByVisualSimilarity` |
+| Подбор селекторов | `src/content/selectors/picker.js`: функции `picker*`, `openSelectorPickerPanel` |
 | Большая панель товаров | `createSortedProductsPopup` и её вложенные функции |
 
 Внутри `createSortedProductsPopup()` ищите `renderDeliveryCalendar` для календаря,
@@ -66,6 +73,23 @@
 
 ## Зависимости и состояние, важные перед переносом
 
+- Пока используются обычные скрипты из массива `content_scripts[].js`, без
+  imports/exports и сборки. Они разделяют область content scripts. Новые файлы
+  содержат объявления функций и состояние; обращения к DOM и состоянию
+  основного файла выполняются при вызове функций после загрузки скриптов.
+  При добавлении файла явно подключайте его в manifest; один перенос в папку не загружает код.
+- `sites.js` и `domains.js` не зависят от DOM или хранилища. В `units.js`
+  нормализация чистая, но функции отображения и порядка читают `UNITS` из `content.js`.
+- `similarity.js` владеет вычислениями и `_featureCache`, который пока читается
+  панелью напрямую. `groupTilesByVisualSimilarity()` использует `getTileKey`
+  из `content.js`; `getImgSrc` передаётся вызывающей стороной.
+- Точка входа picker — `openSelectorPickerPanel(hooks)`: hooks передают текущую
+  конфигурацию, уведомления, перезагрузку конфигурации и действия панели.
+  Picker также использует `CURRENT_PAGE_LINK_SELECTOR`, нормализацию конфигураций
+  и доменов, `extractConfiguredElementValue`, `getConfiguredFieldText`,
+  `getAllUnitResultsFromText` и `fmtUnit`. Подсветка, режим выбора, DOM и их
+  очистка перенесены вместе. Это отдельный файл функции продукта, пока не
+  полностью изолированный модуль; не копируйте его без перечисленных зависимостей.
 - `search.js` объявляет функции без imports/exports. `content.js` вызывает их
   через общую область content scripts. При этом `matchesTileSearchTokens()`
   из `search.js` вызывает функции `content.js`: `getTileTitle`,
