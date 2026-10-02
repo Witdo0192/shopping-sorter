@@ -3,7 +3,7 @@
 Описывает существующую структуру по чтению исходников 2026-10-02.
 Обновляется вместе с переносами кода. Имена функций — ориентиры для поиска;
 номера строк намеренно не фиксируем, поскольку они изменяются.
-Первый проход разделения согласован и выполнен. Ниже — фактическая структура,
+Два прохода разделения согласованы и выполнены. Ниже — фактическая структура,
 включая оставшиеся общие зависимости; большая панель пока не разобрана.
 
 ## Точки входа и контексты
@@ -19,6 +19,13 @@
 | `src/content/config/domains.js` | Нормализация и сравнение доменов |
 | `src/content/images/similarity.js` | Признаки изображений, их кэш и группировка по сходству |
 | `src/content/selectors/picker.js` | Подбор селекторов, подсветка, выбор элементов и сохранение конфигурации |
+| `src/content/storage/saved-products.js` | Метаданные сохранённых товаров, обновления и миграция старых изображений |
+| `src/content/products/fields.js` | Поля карточек, дополнительные атрибуты, ключи и проверка пригодности |
+| `src/content/products/quantities.js` | Количества, цена за единицу, приоритеты и данные бейджей |
+| `src/content/products/collection.js` | Сбор карточек, наблюдение изображений, кэш сохранённых ключей |
+| `src/content/products/metrics.js` | Цены, рейтинг, отзывы, даты, разбор единиц и кэш метрик |
+| `src/content/images/storage.js` | Получение изображений и сообщения к background |
+| `src/content/ui/product-card.js` | Представление одной карточки и нормализованный HTML |
 | `search.js`, `content.js` | Поиск и оставшаяся логика страницы; загружаются после перечисленных файлов |
 | `sites.json` | Стандартные домены, селекторы полей и профили карточек |
 | `units.json` | Стандартные категории, единицы, множители, точность и приоритеты |
@@ -30,7 +37,7 @@
 
 ## Основные потоки
 
-1. `manifest.json` загружает файлы конфигураций, изображений и подбора селекторов,
+1. `manifest.json` загружает выделенные файлы конфигураций, товаров, хранения и UI,
    затем `search.js` и `content.js` на подходящей странице.
 2. `content.js` читает флаги из `chrome.storage.local`; при включённом расширении
    вызывает `init()` → `loadSelectors()` → `collectTiles()` и подключает наблюдение страницы.
@@ -44,7 +51,7 @@
 7. Подбор селекторов сохраняет `_selectorDiffPending` и отправляет `openSettings`.
    Настройки показывают `renderDiffModal()` и применяют выбранную конфигурацию.
 
-## Блоки content.js
+## Где искать логику после переносов
 
 | Задача | Где искать |
 | --- | --- |
@@ -52,14 +59,13 @@
 | Загрузка конфигураций | `loadSelectors` в `content.js`; нормализация и домены — в `src/content/config/` |
 | Эвристики и диагностика селекторов | `detectTilesHeuristic`, `tryHeuristicSelectors`, `scheduleBreakCheck` |
 | Счётчик и причины отклонения карточек | `updateLiveCounterBadge`, `getCurrentDomTileCount`, `renderRejectedPanel` |
-| Сохранение, удаление и обновление метаданных | `getSavedTiles`, `saveTiles`, `addToSaved`, `removeFromSaved`, `flushSavedDataUpdates` |
-| Существующая миграция изображений из HTML | `migrateBase64FromHtml` |
-| Извлечение данных товара | `getTileTitle`, `getTileId`, `getTileKey`, `getTileUrl`, `getPrice`, `getRating`, `getReviewsCount`, `getDeliveryDate`, `getExtraTileAttributes` |
-| Единицы и цена за единицу | `getAllUnitResultsFromText`, `parseUnit`, `getUnitPriceOptions`, `getPreferredUnitPriceOption`, `getPricePerUnit` |
-| Сбор и кэш данных страницы | `collectTiles`, `watchTileImage`, `getTileMetrics`, `invalidateTileMetricsCache` |
-| Даты и значения сортировки | `parseDeliveryDate`, `parseStrictDate`, `getSortValue`, `getSortModeLabel` |
-| Получение и сохранение изображений | `imgToBase64`, `saveImageToBackground`, `loadImagesFromBackground` |
-| Создание карточек | `createCustomSearchTile`, `buildNormalizedTileHtml`, `applySavedDataToTileEl` |
+| Сохранение, удаление, обновление и миграция | `storage/saved-products.js`: `getSavedTiles`, `saveTiles`, `addToSaved`, `removeFromSaved`, `flushSavedDataUpdates`, `migrateBase64FromHtml` |
+| Извлечение полей и ключей | `products/fields.js`: `getTileTitle`, `getTileId`, `getTileKey`, `getTileUrl`, `getExtraTileAttributes` |
+| Количества и цена за единицу | `products/quantities.js`: `getAllUnitResultsFromText`, `getUnitPriceOptions`, `getPreferredUnitPriceOption`, `getPricePerUnit` |
+| Цены, рейтинг, отзывы, даты и разбор единиц | `products/metrics.js`: `getPrice`, `getRating`, `getReviewsCount`, `getDeliveryDate`, `parseUnit`, `getTileMetrics`, `getSortValue` |
+| Сбор карточек страницы | `products/collection.js`: `collectTiles`, `watchTileImage`, `refreshSavedKeysCache` |
+| Получение и сохранение изображений | `images/storage.js`: `imgToBase64`, `saveImageToBackground`, `loadImagesFromBackground` |
+| Создание отдельных карточек | `ui/product-card.js`: `createCustomSearchTile`, `buildNormalizedTileHtml`, `applySavedDataToTileEl` |
 | Визуальное сходство | `src/content/images/similarity.js`: `computePHash`, `computeColorHistogram`, `extractFeatures`, `groupTilesByVisualSimilarity` |
 | Подбор селекторов | `src/content/selectors/picker.js`: функции `picker*`, `openSelectorPickerPanel` |
 | Большая панель товаров | `createSortedProductsPopup` и её вложенные функции |
@@ -72,6 +78,8 @@
 полей фильтров и виртуализация также находятся в этой функции.
 
 ## Зависимости и состояние, важные перед переносом
+
+Пути в таблице выше без `src/content/` относительны к этой папке.
 
 - Пока используются обычные скрипты из массива `content_scripts[].js`, без
   imports/exports и сборки. Они разделяют область content scripts. Новые файлы
@@ -92,7 +100,7 @@
   полностью изолированный модуль; не копируйте его без перечисленных зависимостей.
 - `search.js` объявляет функции без imports/exports. `content.js` вызывает их
   через общую область content scripts. При этом `matchesTileSearchTokens()`
-  из `search.js` вызывает функции `content.js`: `getTileTitle`,
+  из `search.js` вызывает функции выделенных файлов товаров: `getTileTitle`,
   `normalizePrimarySearchFieldName`, `getDeliveryDate`, `getSelectorProfileForTile`,
   `findAllWithinTileOrSelf`, `getExtraTileAttributes` и другие.
   Зависимость двусторонняя; это ещё не изолированный модуль поиска.
@@ -108,6 +116,15 @@
   его контекста, а не общий API для popup, settings или скриптов магазина.
 - Наблюдатели, таймеры, обработчики DOM, стили и блокировка прокрутки имеют
   жизненный цикл. При переносе UI изучайте создание и очистку вместе.
+- `products/fields.js`, `quantities.js` и `metrics.js` связаны вызовами друг
+  друга и текущей конфигурацией. Сбор использует их результаты и обновляет
+  метаданные через `storage/saved-products.js`. `savedKeysCache` пока принадлежит
+  файлу collection и используется также хранением.
+- Вызовы начальной миграции `migrateBase64FromHtml()` и обновления кэша
+  `refreshSavedKeysCache()` оставлены в `content.js`: подключение файла хранения
+  или сбора само по себе не запускает эти действия раньше инициализации.
+- `ui/product-card.js` отвечает за одну карточку, не за всю панель. Её поля
+  берутся из файлов products, а изображения — через images/storage.
 
 ## Настройки и сообщения
 

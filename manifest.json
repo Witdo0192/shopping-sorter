@@ -43,6 +43,13 @@
         "src/content/config/domains.js",
         "src/content/images/similarity.js",
         "src/content/selectors/picker.js",
+        "src/content/storage/saved-products.js",
+        "src/content/products/fields.js",
+        "src/content/products/quantities.js",
+        "src/content/products/collection.js",
+        "src/content/products/metrics.js",
+        "src/content/images/storage.js",
+        "src/content/ui/product-card.js",
         "search.js",
         "content.js"
       ]
