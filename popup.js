@@ -3,6 +3,10 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('settings').addEventListener('click', () => {
         chrome.runtime.openOptionsPage();
     });
+    document.getElementById('multiSearch').addEventListener('click', () => {
+        chrome.tabs.create({ url: chrome.runtime.getURL('multi-search.html') });
+        window.close();
+    });
     document.getElementById('selectors').addEventListener('click', () => {
         chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
             const tab = tabs[0];

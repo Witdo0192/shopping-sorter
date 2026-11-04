@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shopping Sorter — Поиск на сайтах</title>
+  <style>
+    :root {
+      --bg:#f7f8fa; --surface:#fff; --border:#e2e4e8;
+      --accent:#5b6cf9; --accent-light:#eef0ff;
+      --danger:#e53935; --success:#43a047;
+      --text:#1a1d23; --text2:#6b7280; --text3:#9ca3af;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+    .container{max-width:760px;margin:0 auto;padding:24px 20px 60px}
+    h1{font-size:18px;margin-bottom:16px}
+    h2{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin:0 0 10px}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    input[type=text],input[type=search]{flex:1 1 220px;padding:9px 11px;border:1px solid var(--border);border-radius:7px;font-size:14px;outline:none;background:var(--bg)}
+    input[type=text]:focus,input[type=search]:focus{border-color:var(--accent);background:#fff}
+    button{font:inherit;font-size:13px;padding:8px 13px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer}
+    button:hover{border-color:var(--accent)}
+    button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+    button.primary:disabled{opacity:.5;cursor:default}
+    button.icon{padding:3px 8px;border:0;background:none;color:var(--text3);font-size:15px}
+    button.icon:hover{color:var(--danger)}
+    .sites{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+    .chip{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid var(--border);border-radius:999px;background:var(--bg);font-size:13px;cursor:pointer;user-select:none}
+    .chip.on{background:var(--accent-light);border-color:var(--accent);color:#3d4db7}
+    .chip input{display:none}
+    .save-line{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text2);cursor:pointer}
+    .hint{font-size:12px;color:var(--text3);line-height:1.45;margin-top:8px}
+    .empty{color:var(--text3);font-size:13px;padding:8px 0}
+    .saved-item,.site-item{display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--border)}
+    .saved-item:last-child,.site-item:last-child{border-bottom:0}
+    .saved-item .q{flex:1;min-width:0;text-align:left;border:0;background:none;padding:2px;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .saved-item .meta{font-size:11px;color:var(--text3);white-space:nowrap}
+    .site-item .name{font-weight:600;font-size:13px;flex:0 0 140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .site-item .tpl{flex:1;min-width:0;font:12px monospace;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .add-form{display:grid;grid-template-columns:160px 1fr auto;gap:8px;margin-top:12px}
+    .add-form input{flex:none;min-width:0;width:100%;font-size:13px}
+    .presets{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center;font-size:12px;color:var(--text2)}
+    .presets button{padding:3px 9px;font-size:12px;border-radius:999px}
+    .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1a1d23;color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s}
+    .toast.show{opacity:1}
+    @media (max-width:560px){.add-form{grid-template-columns:1fr}.site-item .name{flex-basis:90px}}
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>🔍 Поиск товара на нескольких сайтах</h1>
+
+  <div class="card">
+    <form id="searchForm">
+      <div class="row">
+        <input id="queryInput" type="search" placeholder="Что ищем? Например: кофеварка рожковая" autocomplete="off" autofocus>
+        <button class="primary" id="openBtn" type="submit">Открыть на сайтах</button>
+      </div>
+      <div class="sites" id="siteChips"></div>
+      <div class="row">
+        <label class="save-line"><input type="checkbox" id="saveCheck"> 💾 Запомнить этот запрос (и выбранные сайты)</label>
+        <button type="button" id="selectAllBtn" style="margin-left:auto">Выбрать все</button>
+        <button type="button" id="selectNoneBtn">Снять все</button>
+      </div>
+      <div class="hint" id="formHint"></div>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Сохранённые запросы</h2>
+    <div id="savedList"></div>
+  </div>
+
+  <div class="card">
+    <h2>Сайты для поиска</h2>
+    <div id="siteList"></div>
+    <form class="add-form" id="addSiteForm">
+      <input id="newSiteName" type="text" placeholder="Название" maxlength="40">
+      <input id="newSiteTemplate" type="text" placeholder="https://магазин.ру/search?q={query}" spellcheck="false">
+      <button type="submit">＋ Добавить</button>
+    </form>
+    <div class="presets" id="presets"></div>
+    <div class="hint">
+      Адрес поиска: выполните на сайте любой поиск, скопируйте адрес страницы из браузера и замените
+      искомое слово на <b>{query}</b>. Например, <code>https://shop.example/search?text=чайник</code>
+      → <code>https://shop.example/search?text={query}</code>.
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="multi-search-core.js"></script>
+<script src="multi-search.js"></script>
+</body>
+</html>
