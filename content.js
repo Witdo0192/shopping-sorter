@@ -76,18 +76,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 // Настройки бейджа цены/единицы (ppg-badge).
-let ppgBadgeVisible = true;
-let ppgBadgePosition = 'top-left';
-let ppgBadgeMode = 'all'; // all = все уникальные варианты, current = только выбранная приоритетная величина
-// Какая единица показывается в цене за ед. для каждой категории (кг vs г, л vs мл, мм/см/м…).
-// Значения по умолчанию сохраняют прежнее поведение (крупная единица: кг/л/шт/м).
-let badgeDisplayUnit = { weight: 'кг', volume: 'л', pieces: 'шт', length: 'м' };
-const PPG_BADGE_POSITIONS = {
-    'top-left':    { top: '8px', bottom: 'auto', left: '8px', right: 'auto' },
-    'top-right':   { top: '8px', bottom: 'auto', left: 'auto', right: '8px' },
-    'bottom-left': { top: 'auto', bottom: '8px', left: '8px', right: 'auto' },
-    'bottom-right':{ top: 'auto', bottom: '8px', left: 'auto', right: '8px' },
-};
+loadBadgePreferences();
+loadIndexBadgePreferences();
 
 chrome.storage.local.get(['ppgBadgeVisible', 'ppgBadgePosition', 'ppgBadgeMode', 'badgeDisplayUnit'], d => {
     ppgBadgeVisible = d.ppgBadgeVisible !== false;
