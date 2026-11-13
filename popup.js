@@ -48,13 +48,22 @@ document.addEventListener('DOMContentLoaded', function () {
         chrome.storage.local.set({ liveCounterEnabled: liveCounterToggle.checked });
     });
 
+    // Страницы, куда браузер не внедряет content script (новая вкладка,
+    // chrome://, магазин расширений и т.п.), и вкладки, открытые до перезагрузки
+    // расширения: сохранённые товары показываем на отдельной странице расширения.
+    function openSavedProductsPage() {
+        chrome.tabs.create({ url: chrome.runtime.getURL('saved-products.html') });
+        window.close();
+    }
+
     function openPopup() {
         status.textContent = 'Открываем...';
         chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
             const tab = tabs[0];
+            if (!tab?.id) { openSavedProductsPage(); return; }
             chrome.tabs.sendMessage(tab.id, { action: 'sortProducts', mode: 'asc' }, function (response) {
                 if (chrome.runtime.lastError) {
-                    status.textContent = '❌ Ошибка: обновите страницу';
+                    openSavedProductsPage();
                     return;
                 }
                 if (response?.reason === 'disabled') {
