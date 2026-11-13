@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>Shopping Sorter — сохранённые товары</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #202124; }
+  </style>
+</head>
+
+<body>
+  <!-- Страница расширения для просмотра сохранённых товаров без привязки к сайту.
+       Подключает те же скрипты, что и content script (список обязан совпадать
+       с manifest.json — это проверяет тест), поэтому панель та же самая. -->
+  <script src="src/content/config/sites.js"></script>
+  <script src="src/content/config/units.js"></script>
+  <script src="src/content/config/domains.js"></script>
+  <script src="src/content/images/similarity.js"></script>
+  <script src="src/content/selectors/picker.js"></script>
+  <script src="src/content/storage/saved-products.js"></script>
+  <script src="src/content/products/fields.js"></script>
+  <script src="src/content/products/quantities.js"></script>
+  <script src="src/content/products/collection.js"></script>
+  <script src="src/content/products/metrics.js"></script>
+  <script src="src/content/images/storage.js"></script>
+  <script src="src/content/ui/product-card.js"></script>
+  <script src="src/content/products/sorting.js"></script>
+  <script src="src/content/ui/folder-dialog.js"></script>
+  <script src="src/content/ui/panel-styles.js"></script>
+  <script src="src/content/ui/lifecycle.js"></script>
+  <script src="src/content/ui/delivery-calendar.js"></script>
+  <script src="src/content/ui/saved-queries.js"></script>
+  <script src="src/content/ui/product-transfer.js"></script>
+  <script src="src/content/products/filtering.js"></script>
+  <script src="src/content/ui/product-folders.js"></script>
+  <script src="src/content/ui/saved-products-view.js"></script>
+  <script src="src/content/ui/search-products-view.js"></script>
+  <script src="src/content/ui/extra-attributes.js"></script>
+  <script src="src/content/ui/panel-tools.js"></script>
+  <script src="src/content/ui/image-search.js"></script>
+  <script src="src/content/ui/search-editor.js"></script>
+  <script src="src/content/ui/search-help.js"></script>
+  <script src="src/content/ui/linked-filters.js"></script>
+  <script src="src/content/ui/attribute-suggestions.js"></script>
+  <script src="src/content/ui/search-selection.js"></script>
+  <script src="src/content/ui/saved-products-toolbar.js"></script>
+  <script src="src/content/ui/product-tooltip.js"></script>
+  <script src="src/content/ui/filter-controls.js"></script>
+  <script src="src/content/selectors/heuristics.js"></script>
+  <script src="src/content/ui/live-counter.js"></script>
+  <script src="src/content/ui/unit-badges.js"></script>
+  <script src="src/content/ui/index-badges.js"></script>
+  <script src="src/content/ui/products-panel.js"></script>
+  <script src="search.js"></script>
+  <script src="content.js"></script>
+  <script src="saved-products-page.js"></script>
+</body>
+
+</html>
