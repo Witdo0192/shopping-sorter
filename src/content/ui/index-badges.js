@@ -11,10 +11,11 @@ const INDEX_BADGE_POSITIONS = {
 };
 
 function loadIndexBadgePreferences() {
-    chrome.storage.local.get(['indexBadgeVisible', 'indexBadgePosition'], d => {
+    return new Promise(resolve => chrome.storage.local.get(['indexBadgeVisible', 'indexBadgePosition'], d => {
         indexBadgeVisible = d.indexBadgeVisible === true;
         if (INDEX_BADGE_POSITIONS[d.indexBadgePosition]) indexBadgePosition = d.indexBadgePosition;
-    });
+        resolve();
+    }));
 }
 
 function applyIndexBadgeSettings(badge) {

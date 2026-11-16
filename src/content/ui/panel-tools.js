@@ -176,29 +176,26 @@ function createPanelTools(dependencies) {
         dependencies.showNotification(`✅ Обновлено ${count} картинок в сохранённых`);
     });
 
-    // Обновление атрибутов карточек — вручную, когда сайт дорисовал рейтинг/отзывы позже.
-    const refreshAttrsBtn = document.createElement('button');
-    refreshAttrsBtn.type = 'button';
-    refreshAttrsBtn.textContent = '🔄';
-    refreshAttrsBtn.title = 'Повторно считать атрибуты карточек (рейтинг, отзывы, цена и т.д.)';
-    refreshAttrsBtn.style.cssText = `padding:6px 10px;border:1px solid #ddd;border-radius:6px;cursor:pointer;font-size:13px;background:transparent;color:#999;`;
-    refreshAttrsBtn.addEventListener('click', async () => {
-        refreshAttrsBtn.textContent = '⏳';
-        refreshAttrsBtn.disabled = true;
-        try {
-            collectTiles();
-            await new Promise(r => setTimeout(r, 80));
-            dependencies.currentTiles = [...seenTiles.values()];
-            dependencies.updatePricePlaceholders(dependencies.currentTiles);
-            dependencies.applyFilters();
-            dependencies.showNotification('✅ Атрибуты карточек обновлены');
-        } catch (e) {
-            dependencies.showNotification('⚠️ Не удалось обновить атрибуты', 'warning');
-        } finally {
-            refreshAttrsBtn.textContent = '🔄';
-            refreshAttrsBtn.disabled = false;
-        }
+    // 🔄 — перечитывает атрибуты карточек и синхронизирует данные с БД (ui/data-sync.js).
+    const dataSync = createDataSync(dependencies);
+    const refreshAttrsBtn = dataSync.button;
+
+    // ⚙ — показ/скрытие панели «Фильтры и сортировка» (сама панель не занимает места, пока скрыта).
+    const filtersBtn = document.createElement('button');
+    filtersBtn.type = 'button';
+    filtersBtn.textContent = '⚙';
+    filtersBtn.style.cssText = 'padding:6px 10px;border:1px solid #ddd;border-radius:6px;cursor:pointer;font-size:13px;background:transparent;color:#999;';
+    function updateFiltersBtnStyle(open = false) { // панель при создании всегда скрыта
+        filtersBtn.style.background = open ? '#2196F3' : 'transparent';
+        filtersBtn.style.color = open ? 'white' : '#999';
+        filtersBtn.style.border = open ? 'none' : '1px solid #ddd';
+        filtersBtn.title = open ? 'Фильтры и сортировка: показаны (нажмите, чтобы скрыть)' : 'Фильтры и сортировка: скрыты (нажмите, чтобы показать)';
+    }
+    filtersBtn.addEventListener('click', () => {
+        dependencies.toggleFiltersPanel();
+        updateFiltersBtnStyle(!!dependencies.filtersPanelOpen);
     });
+    updateFiltersBtnStyle();
 
     const badgeSettingsBtn = document.createElement('button');
     badgeSettingsBtn.type = 'button';
@@ -259,6 +256,7 @@ function createPanelTools(dependencies) {
     // Группа служебных кнопок — всегда занимает одинаковое место, не двигает counter
     const toolBtnGroup = document.createElement('div');
     toolBtnGroup.style.cssText = 'display:flex; align-items:center; gap:2px; flex-shrink:0;';
+    toolBtnGroup.appendChild(filtersBtn);
     toolBtnGroup.appendChild(refreshSearchImgBtn);
     toolBtnGroup.appendChild(refreshSavedImgBtn);
     toolBtnGroup.appendChild(refreshAttrsBtn);
@@ -275,5 +273,5 @@ function createPanelTools(dependencies) {
     dependencies.topRow.appendChild(dependencies.closeBtn);
 
     // Строка сортировки
-    return { get debugMode() { return debugMode; }, get hoverTooltipEnabled() { return hoverTooltipEnabled; }, refreshSavedImgBtn, refreshSearchImgBtn, toolBtnGroup, updateDebugVisibility, destroy: lifecycle.destroy };
+    return { get debugMode() { return debugMode; }, get hoverTooltipEnabled() { return hoverTooltipEnabled; }, refreshSavedImgBtn, refreshSearchImgBtn, toolBtnGroup, updateDebugVisibility, destroy() { dataSync.destroy(); lifecycle.destroy(); } };
 }

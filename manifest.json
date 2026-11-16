@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Shopping Sorter",
-  "version": "20.10",
+  "version": "21.0",
   "description": "Запоминает просмотренные товары и позволяет их гибко сортировать/фильтровать",
   "incognito": "spanning",
   "background": {
@@ -62,6 +62,7 @@
         "src/content/ui/saved-products-view.js",
         "src/content/ui/search-products-view.js",
         "src/content/ui/extra-attributes.js",
+        "src/content/ui/data-sync.js",
         "src/content/ui/panel-tools.js",
         "src/content/ui/image-search.js",
         "src/content/ui/search-editor.js",
